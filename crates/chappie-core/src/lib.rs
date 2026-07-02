@@ -451,6 +451,10 @@ pub struct VitalsCfg {
     pub difficulty_gain: f32,
     pub curiosity_gain: f32,
     pub curiosity_reward_decay: f32,
+    /// Boredom rises per monotonous (sub-threshold-surprise) tick, falls per novel one.
+    pub boredom_gain: f32,
+    /// Above this boredom, the mind wanders inward (daydreams) while input is dull.
+    pub bored_threshold: f32,
 }
 impl Default for VitalsCfg {
     fn default() -> Self {
@@ -462,6 +466,8 @@ impl Default for VitalsCfg {
             difficulty_gain: 0.05,
             curiosity_gain: 0.1,
             curiosity_reward_decay: 0.15,
+            boredom_gain: 0.1,
+            bored_threshold: 0.5,
         }
     }
 }
@@ -576,6 +582,8 @@ impl Config {
             "vitals.difficulty_gain" => self.vitals.difficulty_gain = pf!(),
             "vitals.curiosity_gain" => self.vitals.curiosity_gain = pf!(),
             "vitals.curiosity_reward_decay" => self.vitals.curiosity_reward_decay = pf!(),
+            "vitals.boredom_gain" => self.vitals.boredom_gain = pf!(),
+            "vitals.bored_threshold" => self.vitals.bored_threshold = pf!(),
             "budget.gpu_mb" => self.budget.gpu_mb = pf!(),
             "budget.cpu_mb" => self.budget.cpu_mb = pf!(),
             "budget.max_participants" => self.budget.max_participants = pf!(),

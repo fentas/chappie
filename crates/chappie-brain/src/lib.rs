@@ -164,6 +164,8 @@ struct Vitals {
     ticks_awake: u64,
     /// Encoding difficulty: how surprising an experience must be to be stored.
     enc_threshold: f32,
+    /// Boredom: rises with monotony, falls with novelty; high → the mind wanders.
+    boredom: f32,
 }
 
 impl Vitals {
@@ -328,6 +330,7 @@ impl Brain {
                 pressure: 0.0,
                 ticks_awake: 0,
                 enc_threshold: 0.15,
+                boredom: 0.0,
             },
             working: WorkingMemory::new(),
             rng,
@@ -481,16 +484,24 @@ impl Mind for Brain {
             };
         }
 
-        // Daytime recurrence: occasionally an unresolved (deeply-uncertain) memory
-        // intrudes on waking — re-processed with fresh context, and maybe settled.
-        if learn && self.rng.next_f32() < self.cfg.sleep.intrude_prob {
-            if let Some(idx) = self.most_unresolved() {
-                let q = self.hippocampus.buf[idx].query.clone();
-                let (decision, _) = self.dream_tick(&q);
-                if decision.agreement >= self.cfg.sleep.uncertain_threshold {
-                    self.hippocampus.buf[idx].priority *= 0.6; // settled with fresh context
-                }
+        // Boredom → the mind wanders inward (a daydream). Internal generation: it
+        // relives a memory (an unresolved one first, else free-associates) — but it
+        // does NOT store a real event and does NOT take the tick's action. Reality
+        // stays reality. It fires only while bored, and novelty resets boredom, so
+        // real input always preempts it (no merging of the two worlds → no hallucination).
+        if learn
+            && self.vitals.boredom > self.cfg.vitals.bored_threshold
+            && !self.hippocampus.buf.is_empty()
+        {
+            let idx = self
+                .most_unresolved()
+                .unwrap_or_else(|| self.rng.next_range(self.hippocampus.buf.len()));
+            let q = self.hippocampus.buf[idx].query.clone();
+            let (decision, _) = self.dream_tick(&q);
+            if decision.agreement >= self.cfg.sleep.uncertain_threshold {
+                self.hippocampus.buf[idx].priority *= 0.6; // settled with fresh context
             }
+            self.vitals.boredom *= 0.5; // the wander scratched the itch
         }
 
         // 1. Senses → percepts.
@@ -588,6 +599,13 @@ impl Mind for Brain {
             // threshold rises with maturity, so a familiar world is mostly let pass
             // unencoded — and unencoded experience builds no reconciliation pressure.
             let encode = surprise > self.vitals.enc_threshold;
+            // Boredom falls when something novel grabs attention (encoded), rises
+            // with monotony (nothing worth encoding).
+            if encode {
+                self.vitals.boredom = (self.vitals.boredom - self.cfg.vitals.boredom_gain).max(0.0);
+            } else {
+                self.vitals.boredom = (self.vitals.boredom + self.cfg.vitals.boredom_gain).min(1.0);
+            }
             if encode {
                 self.vitals.accumulate(self.cfg.vitals.surprise_weight * surprise);
                 self.hippocampus.record(Episode {
