@@ -419,10 +419,12 @@ pub struct SleepCfg {
     pub dream_len: usize,
     /// Post-thinking agreement below this = deep uncertainty → keep + prioritize.
     pub uncertain_threshold: f32,
+    /// Probability a dream-tick blends the memory with another (creative mix).
+    pub recombine_prob: f32,
 }
 impl Default for SleepCfg {
     fn default() -> Self {
-        Self { replay_cap: 256, dream_len: 24, uncertain_threshold: 0.5 }
+        Self { replay_cap: 256, dream_len: 24, uncertain_threshold: 0.5, recombine_prob: 0.2 }
     }
 }
 
@@ -548,6 +550,7 @@ impl Config {
             "sleep.replay_cap" => self.sleep.replay_cap = pf!(),
             "sleep.dream_len" => self.sleep.dream_len = pf!(),
             "sleep.uncertain_threshold" => self.sleep.uncertain_threshold = pf!(),
+            "sleep.recombine_prob" => self.sleep.recombine_prob = pf!(),
             "vitals.energy_cost_base" => self.vitals.energy_cost_base = pf!(),
             "vitals.energy_cost_per_agent" => self.vitals.energy_cost_per_agent = pf!(),
             "vitals.tired_threshold" => self.vitals.tired_threshold = pf!(),

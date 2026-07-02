@@ -555,6 +555,17 @@ impl Harness {
         }
     }
 
+    /// Forge cross-links between two coalitions (a dream valence-flip connecting
+    /// two affective clusters that never co-occurred while awake).
+    pub fn associate(&mut self, a: &[AgentId], b: &[AgentId], strength: f32) {
+        let rate = self.cfg.hebbian.sleep_rate * strength.max(0.0);
+        for &x in a {
+            for &y in b {
+                self.connectome.strengthen(x as usize, y as usize, rate);
+            }
+        }
+    }
+
     // ---- introspection ----------------------------------------------------
 
     pub fn len(&self) -> usize {

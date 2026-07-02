@@ -599,9 +599,13 @@ impl Mind for Brain {
         }
         normalize(&mut current_fp);
 
+        let recomb = self.cfg.sleep.recombine_prob;
         let mut endorsed = 0usize;
         let mut dismissed = 0usize;
         let mut kept = 0usize;
+        let mut flips = 0usize;
+        let mut prev_val = 0.0f32;
+        let mut prev_winners: Vec<AgentId> = Vec::new();
         for _ in 0..dream_len {
             let n = self.hippocampus.buf.len();
             if n == 0 {
@@ -620,7 +624,23 @@ impl Mind for Brain {
                 }
             }
             let ep = self.hippocampus.buf[idx].clone();
-            let (decision, _active) = self.dream_tick(&ep.query);
+
+            // Recombination: occasionally blend this memory with another — the
+            // chaos monkey turned generative (a creative mix across experiences).
+            let dream_query = if self.rng.next_f32() < recomb && n > 1 {
+                let j = self.rng.next_range(n);
+                let other = self.hippocampus.buf[j].query.clone();
+                let mut blend = ep.query.clone();
+                for k in 0..blend.len().min(other.len()) {
+                    blend[k] = 0.6 * blend[k] + 0.4 * other[k] + 0.03 * self.rng.next_gauss();
+                }
+                normalize(&mut blend);
+                blend
+            } else {
+                ep.query.clone()
+            };
+
+            let (decision, _active) = self.dream_tick(&dream_query);
             let matches = decision.action.kind == ep.decision.kind;
             if decision.agreement < unc {
                 kept += 1;
@@ -634,6 +654,19 @@ impl Mind for Brain {
                 dismissed += 1;
                 self.hippocampus.buf[idx].priority = 0.0;
             }
+
+            // Valence flip: this memory's sign is opposite the previous one — the
+            // dream just crossed between affective clusters. Forge a link between
+            // the two coalitions (a good/bad association neither day held alone).
+            if prev_val * ep.reward < 0.0
+                && !prev_winners.is_empty()
+                && !decision.winners.is_empty()
+            {
+                flips += 1;
+                self.cortex.associate(&prev_winners, &decision.winners, 1.0);
+            }
+            prev_val = ep.reward;
+            prev_winners = decision.winners.clone();
             // Drift the fingerprint toward what we just relived (+ chaos) — the
             // wander: the next retrieval comes from a nearby region of memory.
             let fp = fingerprint(&ep.active_agents, n_agents);
@@ -686,7 +719,7 @@ impl Mind for Brain {
             strengthened,
             new_prototypes: new_protos,
             note: format!(
-                "endorsed {endorsed} · dismissed {dismissed} · kept-uncertain {kept} ({day_episodes} today)"
+                "endorsed {endorsed} · dismissed {dismissed} · kept {kept} · valence-flips {flips} ({day_episodes} today)"
             ),
             day_reward,
             concept_counts,
