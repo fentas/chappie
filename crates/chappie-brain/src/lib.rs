@@ -10,7 +10,7 @@
 //! `Cortex` for Burn/Ollama models, and this loop is unchanged.
 
 use chappie_core::*;
-use chappie_harness::{Agent, Decision, Harness};
+use chappie_harness::{Agent, Decision, Harness, StubAgent};
 use serde::{Deserialize, Serialize};
 
 /// An episode's activation fingerprint: which agents fired, as a normalized
@@ -286,6 +286,9 @@ pub struct Snapshot {
     pub semantic: Vec<Vec<f32>>,
     pub working: Vec<(usize, f32)>,
     pub recent_rewards: Vec<f32>,
+    pub recruited_concepts: Vec<usize>,
+    pub recruited: u64,
+    pub pruned: u64,
 }
 
 // ============================================================================
@@ -312,6 +315,12 @@ pub struct Brain {
     mood: f32,
     /// Running reward expectation, for reward-prediction-error-gated encoding.
     reward_expectation: f32,
+    /// Per-concept accumulated conflict/failure — drives need-driven recruitment.
+    gaps: Vec<f32>,
+    recruited: u64,
+    pruned: u64,
+    /// Concepts that have been recruited (so a snapshot can re-grow the population).
+    recruited_concepts: Vec<usize>,
     pending: Option<Pending>,
     last_trace: Trace,
 }
@@ -346,6 +355,10 @@ impl Brain {
             goal: None,
             mood: 0.0,
             reward_expectation: 0.5,
+            gaps: vec![0.0; EMB_DIM],
+            recruited: 0,
+            pruned: 0,
+            recruited_concepts: Vec::new(),
             pending: None,
             last_trace: Trace::default(),
         }
@@ -359,6 +372,30 @@ impl Brain {
     /// bias what the world presents.
     pub fn set_goal(&mut self, goal: Option<String>) {
         self.goal = goal;
+    }
+
+    /// Grow a new specialist agent for an under-covered, chronically-failing concept.
+    fn recruit_specialist(&mut self, c: usize) {
+        let concept = CONCEPTS[c];
+        let id = self.cortex.len() as AgentId;
+        let (hemi, kind) = match concept {
+            "danger" => (Hemisphere::Right, ActionKind::Move),
+            "language" | "logical" | "numeric" => (Hemisphere::Left, ActionKind::Speak),
+            _ => (Hemisphere::Right, ActionKind::Speak),
+        };
+        let agent = StubAgent::new(
+            id,
+            format!("Grown-{concept}"),
+            hemi,
+            embed(&[(concept, 1.0)]),
+            kind,
+            concept,
+            160.0,
+        )
+        .boxed();
+        self.cortex.add_agent(agent);
+        self.recruited += 1;
+        self.recruited_concepts.push(c);
     }
 
     /// The most deeply-unresolved memory (priority raised above 1.0 by repeated
@@ -434,11 +471,20 @@ impl Brain {
             semantic: self.semantic.protos.clone(),
             working: self.working.slots.clone(),
             recent_rewards: self.recent_rewards.clone(),
+            recruited_concepts: self.recruited_concepts.clone(),
+            recruited: self.recruited,
+            pruned: self.pruned,
         }
     }
 
     /// Overlay a snapshot onto a freshly-built brain (same population).
     pub fn restore(&mut self, s: Snapshot) {
+        // Re-grow the population to match the snapshot before overlaying weights.
+        for &c in &s.recruited_concepts {
+            self.recruit_specialist(c);
+        }
+        self.recruited = s.recruited;
+        self.pruned = s.pruned;
         self.sleeps = s.sleeps;
         self.day_start_tick = s.day_start_tick;
         self.thinks = s.thinks;
@@ -656,6 +702,17 @@ impl Mind for Brain {
             valence = valence.clamp(-1.5, 1.5);
             self.mood = (0.9 * self.mood + 0.1 * valence).clamp(-1.0, 1.0);
 
+            // Deposit a "gap" against the dominant concept when the moment was
+            // conflicted (low self-agreement) or went badly (negative valence).
+            if let Some(c) = concept_index(&p.episode.dominant) {
+                let conflict =
+                    (1.0 - p.episode.decision.confidence).max(0.0) + (-valence).max(0.0);
+                self.gaps[c] += conflict;
+            }
+            for g in self.gaps.iter_mut() {
+                *g *= 0.999;
+            }
+
             // Reward-prediction-error: an unexpectedly good/bad outcome is worth
             // encoding even for a perceptually dull, familiar stimulus.
             let rpe = (r - self.reward_expectation).abs();
@@ -817,6 +874,35 @@ impl Mind for Brain {
         let day_episodes = rn as usize;
         self.day_start_tick = now;
 
+        // Growth & pruning: recruit a specialist for the worst-covered chronic gap,
+        // and cull agents that have gone unused (over-produce then prune).
+        if self.cfg.growth.enabled {
+            if self.cortex.live_count() < self.cfg.growth.max_agents {
+                let mut best_c: Option<usize> = None;
+                let mut best_gap = self.cfg.growth.recruit_gap;
+                for c in 0..EMB_DIM {
+                    if self.gaps[c] > best_gap
+                        && self.cortex.best_coverage(&embed(&[(CONCEPTS[c], 1.0)]))
+                            < self.cfg.growth.recruit_coverage
+                    {
+                        best_gap = self.gaps[c];
+                        best_c = Some(c);
+                    }
+                }
+                if let Some(c) = best_c {
+                    self.recruit_specialist(c);
+                    self.gaps[c] = 0.0;
+                }
+            }
+            let victims = self
+                .cortex
+                .prune_candidates(self.cfg.growth.prune_idle, self.cfg.growth.prune_reliability);
+            for id in victims {
+                self.cortex.prune(id);
+                self.pruned += 1;
+            }
+        }
+
         self.vitals
             .reconcile(self.cfg.vitals.target_day, self.cfg.vitals.difficulty_gain);
         self.sleeps += 1;
@@ -848,7 +934,7 @@ impl Mind for Brain {
             energy: (1.0 - self.vitals.pressure / self.cfg.vitals.pressure_capacity.max(0.001))
                 .clamp(0.0, 1.0),
             curiosity: self.vitals.curiosity,
-            agents_total: self.cortex.len(),
+            agents_total: self.cortex.live_count(),
             gpu_count: self.cortex.count_tier(Placement::Gpu),
             cpu_count: self.cortex.count_tier(Placement::Cpu),
             cold_count: self.cortex.count_tier(Placement::Cold),
@@ -862,6 +948,8 @@ impl Mind for Brain {
             sleeps: self.sleeps,
             avg_reward: avg,
             thinks: self.thinks,
+            recruited: self.recruited,
+            pruned: self.pruned,
         }
     }
 }

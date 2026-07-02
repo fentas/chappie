@@ -202,7 +202,7 @@ impl World for Sandbox {
 
     fn advance(&mut self, competence: f32) {
         // Graduate when consistently competent and enough time has passed.
-        if competence > 0.7 && self.since_advance > 300 && self.stage != LifeStage::Adulthood {
+        if competence > 0.55 && self.since_advance > 300 && self.stage != LifeStage::Adulthood {
             self.stage = self.stage.next();
             self.since_advance = 0;
         }

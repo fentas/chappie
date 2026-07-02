@@ -247,6 +247,21 @@ impl Connectome {
         }
     }
 
+    /// Grow to `new_n` agents, preserving existing weights (new row/col zeroed).
+    pub fn grow(&mut self, new_n: usize) {
+        if new_n <= self.n {
+            return;
+        }
+        let mut w = vec![0.0f32; new_n * new_n];
+        for i in 0..self.n {
+            for j in 0..self.n {
+                w[i * new_n + j] = self.w[i * self.n + j];
+            }
+        }
+        self.w = w;
+        self.n = new_n;
+    }
+
     /// How strongly `a` is wired to a set of agents (used for shared priority).
     pub fn bias_for(&self, a: usize, group: &[AgentId]) -> f32 {
         group.iter().map(|&b| self.weight(a, b as usize)).sum()
@@ -263,6 +278,10 @@ struct Slot {
     priority: f32,
     last_used: u64,
     activations: u64,
+    /// Culled agents are kept (id stays stable) but never scheduled again.
+    dead: bool,
+    /// Tick this agent last participated in deliberation (for pruning).
+    last_active_tick: u64,
 }
 
 pub struct Decision {
@@ -299,6 +318,8 @@ impl Harness {
                 priority: 0.0,
                 last_used: 0,
                 activations: 0,
+                dead: false,
+                last_active_tick: 0,
             })
             .collect();
         Harness {
@@ -330,6 +351,9 @@ impl Harness {
             .iter()
             .map(|s| {
                 let a = s.agent.id();
+                if s.dead {
+                    return (a, f32::MIN);
+                }
                 let mut pri = pc.w_relevance * cosine(query, s.agent.competency());
                 pri += pc.w_shared * self.connectome.bias_for(a as usize, &hot) / hot_denom;
                 pri += pc.w_reliability * s.agent.reliability();
@@ -394,6 +418,7 @@ impl Harness {
 
         for &id in &participants {
             self.slots[id as usize].activations += 1;
+            self.slots[id as usize].last_active_tick = self.tick;
         }
         self.active = participants.clone();
         self.hot = (0..n)
@@ -619,6 +644,63 @@ impl Harness {
     pub fn set_connectome_weights(&mut self, w: &[f32]) {
         self.connectome.set_weights(w);
     }
+
+    // ---- growth & pruning --------------------------------------------------
+
+    /// Add an agent (its id MUST equal the current agent count). Grows the
+    /// connectome; returns the new id.
+    pub fn add_agent(&mut self, agent: Box<dyn Agent>) -> AgentId {
+        let id = self.slots.len() as AgentId;
+        self.total_mb += agent.footprint_mb();
+        self.slots.push(Slot {
+            agent,
+            placement: Placement::Cold,
+            priority: 0.0,
+            last_used: self.tick,
+            activations: 0,
+            dead: false,
+            last_active_tick: self.tick,
+        });
+        self.connectome.grow(self.slots.len());
+        id
+    }
+
+    /// Cull an agent: it stays (id stable) but is never scheduled again.
+    pub fn prune(&mut self, id: AgentId) {
+        if let Some(s) = self.slots.get_mut(id as usize) {
+            if !s.dead {
+                s.dead = true;
+                s.agent.on_placement(Placement::Cold);
+                s.placement = Placement::Cold;
+            }
+        }
+    }
+
+    pub fn live_count(&self) -> usize {
+        self.slots.iter().filter(|s| !s.dead).count()
+    }
+
+    /// The best competency any *live* agent has for a target (0 = uncovered).
+    pub fn best_coverage(&self, target: &Embedding) -> f32 {
+        self.slots
+            .iter()
+            .filter(|s| !s.dead)
+            .map(|s| cosine(target, s.agent.competency()))
+            .fold(0.0, f32::max)
+    }
+
+    /// Live agents idle longer than `idle_span` and below `min_reliability` — cull candidates.
+    pub fn prune_candidates(&self, idle_span: u64, min_reliability: f32) -> Vec<AgentId> {
+        self.slots
+            .iter()
+            .filter(|s| {
+                !s.dead
+                    && self.tick.saturating_sub(s.last_active_tick) > idle_span
+                    && s.agent.reliability() < min_reliability
+            })
+            .map(|s| s.agent.id())
+            .collect()
+    }
     pub fn gpu_budget(&self) -> f32 {
         self.cfg.budget.gpu_mb
     }
@@ -626,12 +708,12 @@ impl Harness {
         self.cfg.budget.cpu_mb
     }
     pub fn count_tier(&self, t: Placement) -> usize {
-        self.slots.iter().filter(|s| s.placement == t).count()
+        self.slots.iter().filter(|s| !s.dead && s.placement == t).count()
     }
     pub fn tier_names(&self, t: Placement) -> Vec<String> {
         self.slots
             .iter()
-            .filter(|s| s.placement == t)
+            .filter(|s| !s.dead && s.placement == t)
             .map(|s| s.agent.name().to_string())
             .collect()
     }
@@ -640,6 +722,7 @@ impl Harness {
         let mut v: Vec<(String, f32, u64)> = self
             .slots
             .iter()
+            .filter(|s| !s.dead)
             .map(|s| (s.agent.name().to_string(), s.agent.reliability(), s.activations))
             .collect();
         v.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));

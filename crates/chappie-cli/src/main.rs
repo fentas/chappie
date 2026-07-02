@@ -211,14 +211,11 @@ fn build_population() -> Vec<Box<dyn Agent>> {
     let spec: &[(&str, Hemisphere, &[(&str, f32)], ActionKind, &str, f32)] = &[
         ("Wernicke", Left, &[("language", 1.0)], Speak, "language", 220.0),
         ("Broca", Left, &[("language", 0.8), ("social", 0.3)], Speak, "language", 200.0),
-        ("Logician", Left, &[("logical", 1.0)], Speak, "logical", 180.0),
-        ("Numerist", Left, &[("numeric", 1.0)], Speak, "numeric", 160.0),
         ("Namer", Left, &[("visual", 0.7), ("language", 0.5)], Speak, "visual", 190.0),
         ("Grammar", Left, &[("language", 0.6), ("logical", 0.4)], Speak, "language", 150.0),
         ("Gestalt", Right, &[("visual", 1.0), ("spatial", 0.4)], Speak, "visual", 240.0),
         ("Navigator", Right, &[("spatial", 1.0), ("visual", 0.3)], Speak, "spatial", 210.0),
         ("Amygdala", Right, &[("danger", 1.0)], Move, "danger", 120.0),
-        ("Empath", Right, &[("social", 1.0)], Speak, "social", 200.0),
         ("Prosody", Right, &[("auditory", 0.8), ("social", 0.4)], Speak, "auditory", 170.0),
         ("Ear", Right, &[("auditory", 1.0)], Speak, "auditory", 150.0),
         ("Nose", Right, &[("olfactory", 1.0)], Speak, "olfactory", 90.0),
@@ -325,6 +322,10 @@ fn final_report(brain: &Brain, exam: &Examiner, cfg: &Config) {
         "lived {} ticks over {} sleep-days · final stage: {} · escalated to thinking {} times",
         st.tick, st.day, st.stage, st.thinks
     );
+    println!(
+        "population: {} live agents · grew {} · pruned {}",
+        st.agents_total, st.recruited, st.pruned
+    );
 
     let (first, last, best, auc) = if scores.is_empty() {
         (0.0, 0.0, 0.0, 0.0)
@@ -410,8 +411,9 @@ fn final_report(brain: &Brain, exam: &Examiner, cfg: &Config) {
     // git commit it ran against, so benchmark movements correlate to changes.
     let flavor = if cfg!(feature = "burn") { "burn" } else { "std" };
     println!(
-        "\nRESULT git={} build={} seed={} ticks={} bench_final={:.3} bench_best={:.3} bench_auc={:.3} bench_hard={:.3} bench_recall={:.3} reward={:.3} thinks={} days={} stage={} peak_gpu_mb={:.0} peak_cpu_mb={:.0} gpu_budget={:.0} cpu_budget={:.0}",
-        git_hash(), flavor, cfg.seed, cfg.ticks, last, best, auc, last_hard, last_recall, st.avg_reward, st.thinks, st.day, st.stage,
+        "\nRESULT git={} build={} seed={} ticks={} bench_final={:.3} bench_best={:.3} bench_auc={:.3} bench_hard={:.3} bench_recall={:.3} reward={:.3} thinks={} agents={} recruited={} pruned={} days={} stage={} peak_gpu_mb={:.0} peak_cpu_mb={:.0} gpu_budget={:.0} cpu_budget={:.0}",
+        git_hash(), flavor, cfg.seed, cfg.ticks, last, best, auc, last_hard, last_recall, st.avg_reward, st.thinks,
+        st.agents_total, st.recruited, st.pruned, st.day, st.stage,
         st.peak_gpu_mb, st.peak_cpu_mb, cfg.budget.gpu_mb, cfg.budget.cpu_mb
     );
 }

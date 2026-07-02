@@ -309,6 +309,9 @@ pub struct MindStats {
     pub avg_reward: f32,
     /// How many decisions this life required escalating from reflex to "thinking".
     pub thinks: u64,
+    /// Agents grown (recruited) and culled (pruned) over the life.
+    pub recruited: u64,
+    pub pruned: u64,
 }
 
 // ============================================================================
@@ -514,6 +517,35 @@ impl Default for ThinkingCfg {
     }
 }
 
+/// Developmental growth of the substrate: recruit agents where the brain keeps
+/// failing on an uncovered niche; prune agents it doesn't use. Budgets stay the cap.
+#[derive(Clone, Debug)]
+pub struct GrowthCfg {
+    /// false = frozen population (pure limit); true = grow toward max_agents.
+    pub enabled: bool,
+    pub max_agents: usize,
+    /// Accumulated conflict against a concept before a specialist is recruited.
+    pub recruit_gap: f32,
+    /// Only recruit if the best existing competency for that concept is below this.
+    pub recruit_coverage: f32,
+    /// Idle span (ticks without participating) before an unused agent is culled.
+    pub prune_idle: u64,
+    /// Only cull agents below this reliability.
+    pub prune_reliability: f32,
+}
+impl Default for GrowthCfg {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_agents: 40,
+            recruit_gap: 8.0,
+            recruit_coverage: 0.6,
+            prune_idle: 6000,
+            prune_reliability: 0.45,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Config {
     pub seed: u64,
@@ -527,6 +559,7 @@ pub struct Config {
     pub vitals: VitalsCfg,
     pub budget: BudgetCfg,
     pub thinking: ThinkingCfg,
+    pub growth: GrowthCfg,
 }
 
 impl Default for Config {
@@ -543,6 +576,7 @@ impl Default for Config {
             vitals: VitalsCfg::default(),
             budget: BudgetCfg::default(),
             thinking: ThinkingCfg::default(),
+            growth: GrowthCfg::default(),
         }
     }
 }
@@ -604,6 +638,12 @@ impl Config {
             "thinking.max_escalations" => self.thinking.max_escalations = pf!(),
             "thinking.widen_participants" => self.thinking.widen_participants = pf!(),
             "thinking.widen_floor_mult" => self.thinking.widen_floor_mult = pf!(),
+            "growth.enabled" => self.growth.enabled = pf!(),
+            "growth.max_agents" => self.growth.max_agents = pf!(),
+            "growth.recruit_gap" => self.growth.recruit_gap = pf!(),
+            "growth.recruit_coverage" => self.growth.recruit_coverage = pf!(),
+            "growth.prune_idle" => self.growth.prune_idle = pf!(),
+            "growth.prune_reliability" => self.growth.prune_reliability = pf!(),
             _ => return false,
         }
         true
