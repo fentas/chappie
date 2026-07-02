@@ -278,6 +278,9 @@ pub struct Episode {
     pub active_agents: Vec<AgentId>,
     pub reward: f32,
     pub surprise: f32,
+    /// Replay priority: raised on deep uncertainty (resurface), lowered when
+    /// settled, zeroed on dismissal (then pruned). Defaults to 1.0 at encoding.
+    pub priority: f32,
 }
 
 // ============================================================================
@@ -414,10 +417,12 @@ pub struct SleepCfg {
     pub replay_cap: usize,
     /// How many memories to relive per sleep (dream-ticks through the loop).
     pub dream_len: usize,
+    /// Post-thinking agreement below this = deep uncertainty → keep + prioritize.
+    pub uncertain_threshold: f32,
 }
 impl Default for SleepCfg {
     fn default() -> Self {
-        Self { replay_cap: 256, dream_len: 24 }
+        Self { replay_cap: 256, dream_len: 24, uncertain_threshold: 0.5 }
     }
 }
 
@@ -542,6 +547,7 @@ impl Config {
             "hebbian.max_weight" => self.hebbian.max_weight = pf!(),
             "sleep.replay_cap" => self.sleep.replay_cap = pf!(),
             "sleep.dream_len" => self.sleep.dream_len = pf!(),
+            "sleep.uncertain_threshold" => self.sleep.uncertain_threshold = pf!(),
             "vitals.energy_cost_base" => self.vitals.energy_cost_base = pf!(),
             "vitals.energy_cost_per_agent" => self.vitals.energy_cost_per_agent = pf!(),
             "vitals.tired_threshold" => self.vitals.tired_threshold = pf!(),

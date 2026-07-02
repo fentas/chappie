@@ -49,6 +49,7 @@ fn main() {
                     active_agents: vec![0],
                     reward: 1.0,
                     surprise: 0.0,
+                    priority: 1.0,
                 });
             }
         }

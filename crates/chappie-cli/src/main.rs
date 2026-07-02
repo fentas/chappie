@@ -598,10 +598,10 @@ fn write_diary(dir: &str, dream: &DreamLog, st: &MindStats) {
         s += &format!("**Working on:** {g}\n\n");
     }
     s += &format!(
-        "Today felt {}. Reward {:+.2}; I consolidated {} memories in my sleep.\n\n",
+        "Today felt {}. Reward {:+.2}.\nIn my sleep I {}.\n\n",
         mood(dream.day_reward),
         dream.day_reward,
-        dream.replayed
+        dream.note
     );
     if !dream.concept_counts.is_empty() {
         s += "What I paid attention to:\n";

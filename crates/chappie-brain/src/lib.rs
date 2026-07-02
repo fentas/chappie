@@ -526,6 +526,7 @@ impl Mind for Brain {
                 active_agents: active.clone(),
                 reward: 0.0,
                 surprise,
+                priority: 1.0,
             });
             self.pending = Some(Pending {
                 winners: decision.winners.clone(),
@@ -564,20 +565,42 @@ impl Mind for Brain {
     fn sleep(&mut self) -> DreamLog {
         let episodes = self.hippocampus.buf.clone();
 
-        // Dream: relive sampled memories through the *current* brain and endorse
-        // (strengthen) the ones it still agrees with. Same loop as waking, fed by
-        // internal input instead of the world.
-        let dream_len = if episodes.is_empty() { 0 } else { self.cfg.sleep.dream_len };
+        // Dream: relive sampled memories through the *current* brain, and let the
+        // matured brain JUDGE each one three ways — endorse (re-affirmed →
+        // strengthen + settle), dismiss (confidently low-value → prune), or
+        // keep-uncertain (still can't decide → raise priority so it resurfaces).
+        let dream_len = self.cfg.sleep.dream_len;
+        let unc = self.cfg.sleep.uncertain_threshold;
         let mut endorsed = 0usize;
+        let mut dismissed = 0usize;
+        let mut kept = 0usize;
         for _ in 0..dream_len {
-            let idx = self.rng.next_range(episodes.len());
-            let ep = episodes[idx].clone();
+            let n = self.hippocampus.buf.len();
+            if n == 0 {
+                break;
+            }
+            let idx = self.rng.next_range(n);
+            let ep = self.hippocampus.buf[idx].clone();
             let (decision, _active) = self.dream_tick(&ep.query);
-            if ep.reward > 0.0 && decision.action.kind == ep.decision.kind {
+            let matches = decision.action.kind == ep.decision.kind;
+            if decision.agreement < unc {
+                // Deep uncertainty — even after thinking, still split. Keep + resurface.
+                kept += 1;
+                self.hippocampus.buf[idx].priority =
+                    (self.hippocampus.buf[idx].priority * 1.5).min(4.0);
+            } else if ep.reward > 0.0 && matches {
+                // Endorse — re-affirmed. Strengthen the coalition and settle it.
                 endorsed += 1;
                 self.cortex.endorse(&decision.winners, ep.reward);
+                self.hippocampus.buf[idx].priority *= 0.7;
+            } else if ep.reward <= 0.0 {
+                // Dismiss — confidently judged low-value. Mark for pruning.
+                dismissed += 1;
+                self.hippocampus.buf[idx].priority = 0.0;
             }
         }
+        // Forget the dismissed / faded.
+        self.hippocampus.buf.retain(|e| e.priority > 0.05);
 
         // Offline weight training + forgetting.
         self.cortex.consolidate(&episodes, &mut self.rng);
@@ -620,7 +643,9 @@ impl Mind for Brain {
             replayed: episodes.len(),
             strengthened,
             new_prototypes: new_protos,
-            note: format!("relived {dream_len}, endorsed {endorsed} ({day_episodes} today)"),
+            note: format!(
+                "endorsed {endorsed} · dismissed {dismissed} · kept-uncertain {kept} ({day_episodes} today)"
+            ),
             day_reward,
             concept_counts,
             goal: self.goal.clone(),
