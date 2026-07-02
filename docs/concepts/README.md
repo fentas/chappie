@@ -18,6 +18,7 @@ these capture the intent the code is reaching for.
 9. [Growth & Pruning](09-growth-and-pruning.md) — grow agents/connections when needed (neurogenesis), cull the unused (pruning); the limit⇄grow dial.
 10. [Limits & Measurements](10-limits-and-measurements.md) — real numbers: loop scaling, where a tick goes, GPU transfer/compute, the actual envelope. *(measured, not spec)*
 11. [Committee vs Monolith](11-committee-vs-monolith.md) — the thesis under test: shared-backbone specialists + vote vs one equal-size net, measured head-to-head.
+12. [The Gatekeeper](12-gatekeeper.md) — the fast lane: low-capacity deep memories (trauma one-shot + slow overlearning), fingerprint-matched, reflex before the coordinator.
 
 ## Reading guide
 

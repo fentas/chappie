@@ -312,6 +312,9 @@ pub struct MindStats {
     /// Agents grown (recruited) and culled (pruned) over the life.
     pub recruited: u64,
     pub pruned: u64,
+    /// Deep memories held, and reflexes fired on the fast lane (gatekeeper).
+    pub deep_memories: usize,
+    pub reflexes: u64,
 }
 
 // ============================================================================
@@ -546,6 +549,37 @@ impl Default for GrowthCfg {
     }
 }
 
+/// The gatekeeper: a fast pre-attentive lane over low-capacity "deep memories".
+#[derive(Clone, Debug)]
+pub struct GatekeeperCfg {
+    pub capacity: usize,
+    /// |valence| above which a single event burns a deep memory (fast lane / trauma).
+    pub trauma_threshold: f32,
+    /// Fingerprint similarity above which a deep memory fires.
+    pub match_threshold: f32,
+    /// Deep-memory valence below which a match triggers a reflex (bypass deliberation).
+    pub fear_threshold: f32,
+    /// Repetitions of a familiar, good reaction before it graduates (slow lane).
+    pub slow_reps: u32,
+    /// How strongly a (non-fear) match primes the coordinator.
+    pub prime_boost: f32,
+    /// Unused deep memories fade by this factor each sleep.
+    pub decay: f32,
+}
+impl Default for GatekeeperCfg {
+    fn default() -> Self {
+        Self {
+            capacity: 12,
+            trauma_threshold: 0.9,
+            match_threshold: 0.9,
+            fear_threshold: -0.4,
+            slow_reps: 60,
+            prime_boost: 0.6,
+            decay: 0.9,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Config {
     pub seed: u64,
@@ -560,6 +594,7 @@ pub struct Config {
     pub budget: BudgetCfg,
     pub thinking: ThinkingCfg,
     pub growth: GrowthCfg,
+    pub gatekeeper: GatekeeperCfg,
 }
 
 impl Default for Config {
@@ -577,6 +612,7 @@ impl Default for Config {
             budget: BudgetCfg::default(),
             thinking: ThinkingCfg::default(),
             growth: GrowthCfg::default(),
+            gatekeeper: GatekeeperCfg::default(),
         }
     }
 }
@@ -644,6 +680,13 @@ impl Config {
             "growth.recruit_coverage" => self.growth.recruit_coverage = pf!(),
             "growth.prune_idle" => self.growth.prune_idle = pf!(),
             "growth.prune_reliability" => self.growth.prune_reliability = pf!(),
+            "gatekeeper.capacity" => self.gatekeeper.capacity = pf!(),
+            "gatekeeper.trauma_threshold" => self.gatekeeper.trauma_threshold = pf!(),
+            "gatekeeper.match_threshold" => self.gatekeeper.match_threshold = pf!(),
+            "gatekeeper.fear_threshold" => self.gatekeeper.fear_threshold = pf!(),
+            "gatekeeper.slow_reps" => self.gatekeeper.slow_reps = pf!(),
+            "gatekeeper.prime_boost" => self.gatekeeper.prime_boost = pf!(),
+            "gatekeeper.decay" => self.gatekeeper.decay = pf!(),
             _ => return false,
         }
         true

@@ -326,6 +326,10 @@ fn final_report(brain: &Brain, exam: &Examiner, cfg: &Config) {
         "population: {} live agents · grew {} · pruned {}",
         st.agents_total, st.recruited, st.pruned
     );
+    println!(
+        "gatekeeper: {} deep memories · {} reflexes fired (fast lane)",
+        st.deep_memories, st.reflexes
+    );
 
     let (first, last, best, auc) = if scores.is_empty() {
         (0.0, 0.0, 0.0, 0.0)
@@ -411,9 +415,9 @@ fn final_report(brain: &Brain, exam: &Examiner, cfg: &Config) {
     // git commit it ran against, so benchmark movements correlate to changes.
     let flavor = if cfg!(feature = "burn") { "burn" } else { "std" };
     println!(
-        "\nRESULT git={} build={} seed={} ticks={} bench_final={:.3} bench_best={:.3} bench_auc={:.3} bench_hard={:.3} bench_recall={:.3} reward={:.3} thinks={} agents={} recruited={} pruned={} days={} stage={} peak_gpu_mb={:.0} peak_cpu_mb={:.0} gpu_budget={:.0} cpu_budget={:.0}",
+        "\nRESULT git={} build={} seed={} ticks={} bench_final={:.3} bench_best={:.3} bench_auc={:.3} bench_hard={:.3} bench_recall={:.3} reward={:.3} thinks={} agents={} recruited={} pruned={} deep={} reflexes={} days={} stage={} peak_gpu_mb={:.0} peak_cpu_mb={:.0} gpu_budget={:.0} cpu_budget={:.0}",
         git_hash(), flavor, cfg.seed, cfg.ticks, last, best, auc, last_hard, last_recall, st.avg_reward, st.thinks,
-        st.agents_total, st.recruited, st.pruned, st.day, st.stage,
+        st.agents_total, st.recruited, st.pruned, st.deep_memories, st.reflexes, st.day, st.stage,
         st.peak_gpu_mb, st.peak_cpu_mb, cfg.budget.gpu_mb, cfg.budget.cpu_mb
     );
 }

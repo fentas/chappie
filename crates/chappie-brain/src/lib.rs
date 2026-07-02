@@ -295,6 +295,17 @@ pub struct Snapshot {
 // Brain — the whole thing.
 // ============================================================================
 
+/// A deep memory: a fast-lane, fingerprint-addressed engram — a burned-in reaction
+/// that the gatekeeper matches *before* the coordinator deliberates.
+struct DeepMemory {
+    fingerprint: Embedding,
+    action: ActionKind,
+    utterance: String,
+    valence: f32,
+    strength: f32,
+    hits: u32,
+}
+
 pub struct Brain {
     senses: Senses,
     thalamus: Thalamus,
@@ -321,6 +332,11 @@ pub struct Brain {
     pruned: u64,
     /// Concepts that have been recruited (so a snapshot can re-grow the population).
     recruited_concepts: Vec<usize>,
+    /// The gatekeeper's low-capacity deep memories, slow-lane repetition counters,
+    /// and how many reflexes have fired on the fast lane.
+    deep: Vec<DeepMemory>,
+    reflex_count: Vec<u32>,
+    reflexes: u64,
     pending: Option<Pending>,
     last_trace: Trace,
 }
@@ -359,6 +375,9 @@ impl Brain {
             recruited: 0,
             pruned: 0,
             recruited_concepts: Vec::new(),
+            deep: Vec::new(),
+            reflex_count: vec![0; EMB_DIM],
+            reflexes: 0,
             pending: None,
             last_trace: Trace::default(),
         }
@@ -396,6 +415,47 @@ impl Brain {
         self.cortex.add_agent(agent);
         self.recruited += 1;
         self.recruited_concepts.push(c);
+    }
+
+    /// Fast pre-attentive match: the best deep memory for a percept (idx, similarity).
+    fn gatekeeper_match(&self, q: &Embedding) -> Option<(usize, f32)> {
+        let mut best: Option<usize> = None;
+        let mut bs = 0.0f32;
+        for (i, d) in self.deep.iter().enumerate() {
+            let s = cosine(q, &d.fingerprint);
+            if s > bs {
+                bs = s;
+                best = Some(i);
+            }
+        }
+        best.map(|i| (i, bs))
+    }
+
+    /// Burn a deep memory (fast lane = trauma, slow lane = overlearning). Merges into a
+    /// near-identical existing one; else inserts, evicting the weakest at capacity.
+    fn burn_deep(&mut self, fp: &Embedding, action: ActionKind, utterance: &str, valence: f32) {
+        if let Some((i, sim)) = self.gatekeeper_match(fp) {
+            if sim > self.cfg.gatekeeper.match_threshold {
+                self.deep[i].strength += 0.5;
+                self.deep[i].valence = 0.5 * self.deep[i].valence + 0.5 * valence;
+                return;
+            }
+        }
+        if self.deep.len() >= self.cfg.gatekeeper.capacity {
+            if let Some((wi, _)) = self.deep.iter().enumerate().min_by(|a, b| {
+                a.1.strength.partial_cmp(&b.1.strength).unwrap_or(std::cmp::Ordering::Equal)
+            }) {
+                self.deep.remove(wi);
+            }
+        }
+        self.deep.push(DeepMemory {
+            fingerprint: fp.clone(),
+            action,
+            utterance: utterance.to_string(),
+            valence,
+            strength: 1.0,
+            hits: 0,
+        });
     }
 
     /// The most deeply-unresolved memory (priority raised above 1.0 by repeated
@@ -578,14 +638,70 @@ impl Mind for Brain {
         let surprise = self.semantic.novelty(&query);
         let lead = self.thalamus.lead(surprise, self.vitals.curiosity, self.cfg.hemisphere.novelty_threshold);
 
+        // FIRST DOOR — the gatekeeper's fast lane. Match the percept against deep
+        // memories *before* the coordinator runs. A fear match reacts instantly
+        // (bypassing all deliberation); any other strong match primes the workspace.
+        let mut prime: Option<(ActionKind, String, f32)> = None;
+        if learn {
+            if let Some((i, sim)) = self.gatekeeper_match(&query) {
+                if sim > self.cfg.gatekeeper.match_threshold {
+                    self.deep[i].hits += 1;
+                    self.deep[i].strength = (self.deep[i].strength + 0.05).min(3.0);
+                    if self.deep[i].valence < self.cfg.gatekeeper.fear_threshold {
+                        // Reflex: the burned-in reaction fires now — no deliberation.
+                        self.reflexes += 1;
+                        self.vitals.tick();
+                        let action = Action {
+                            kind: self.deep[i].action,
+                            utterance: self.deep[i].utterance.clone(),
+                            target: query.clone(),
+                            confidence: sim,
+                        };
+                        let episode = Episode {
+                            tick: self.vitals.age_ticks,
+                            stage: self.stage.clone(),
+                            query: query.clone(),
+                            dominant: CONCEPTS[dom].to_string(),
+                            decision: action.clone(),
+                            active_agents: Vec::new(),
+                            reward: 0.0,
+                            surprise,
+                            priority: 1.0,
+                        };
+                        self.pending = Some(Pending {
+                            episode,
+                            winners: Vec::new(),
+                            perceptual_encode: surprise > self.vitals.enc_threshold,
+                        });
+                        self.cortex.end_tick();
+                        return action;
+                    }
+                    prime = Some((self.deep[i].action, self.deep[i].utterance.clone(), sim));
+                }
+            }
+        }
+
         // 4. Schedule: rank by priority, place agents on GPU/CPU/cold.
         let mut active = self.cortex.schedule(&query, &mut self.rng);
 
         // 5. Deliberate → consensus (System 1: the fast reflex).
-        let proposals = self
+        let mut proposals = self
             .cortex
             .deliberate(&query, dom, lead, self.vitals.curiosity, &mut self.rng);
+        // Gatekeeper prime: a deep memory speaks fast and loud in the workspace.
+        if let Some((kind, utter, sim)) = prime {
+            proposals.push(Proposal {
+                agent: u32::MAX,
+                agent_name: "Gatekeeper".to_string(),
+                hemisphere: Hemisphere::Right,
+                action: Action { kind, utterance: utter, target: query.clone(), confidence: sim },
+                weight: sim * self.cfg.gatekeeper.prime_boost,
+                rationale: "deep-memory prime".to_string(),
+            });
+        }
         let mut decision = self.cortex.consensus(&proposals);
+        // The gatekeeper is not an agent — drop its pseudo-id from the winners.
+        decision.winners.retain(|&w| (w as usize) < self.cortex.len());
 
         // 5b. System 2: a split coalition (low agreement) means the reflex is
         //     unsure — so THINK. Widen the coalition and re-deliberate until we're
@@ -711,6 +827,33 @@ impl Mind for Brain {
             }
             for g in self.gaps.iter_mut() {
                 *g *= 0.999;
+            }
+
+            // Deep-memory formation. FAST lane: a traumatic (very-high-|valence|)
+            // event burns a deep memory in one shot. SLOW lane: a familiar, reliably-
+            // good reaction, repeated enough, graduates into an overlearned reflex.
+            if valence.abs() > self.cfg.gatekeeper.trauma_threshold {
+                // An aversive trauma burns a PROTECTIVE reflex (withdraw / Move), not a
+                // replay of the action that caused it; a positive one keeps what worked.
+                let (kind, utter) = if valence < 0.0 {
+                    (ActionKind::Move, String::new())
+                } else {
+                    (p.episode.decision.kind, p.episode.decision.utterance.clone())
+                };
+                self.burn_deep(&p.episode.query, kind, &utter, valence);
+            } else if let Some(c) = concept_index(&p.episode.dominant) {
+                if surprise < self.vitals.enc_threshold && valence > 0.3 {
+                    self.reflex_count[c] += 1;
+                    if self.reflex_count[c] >= self.cfg.gatekeeper.slow_reps {
+                        self.reflex_count[c] = 0;
+                        self.burn_deep(
+                            &p.episode.query,
+                            p.episode.decision.kind,
+                            &p.episode.decision.utterance,
+                            valence,
+                        );
+                    }
+                }
             }
 
             // Reward-prediction-error: an unexpectedly good/bad outcome is worth
@@ -903,6 +1046,13 @@ impl Mind for Brain {
             }
         }
 
+        // Deep memories fade if unused (and drop when spent) — the gate stays lean.
+        let gk_decay = self.cfg.gatekeeper.decay;
+        for d in self.deep.iter_mut() {
+            d.strength *= gk_decay;
+        }
+        self.deep.retain(|d| d.strength > 0.15);
+
         self.vitals
             .reconcile(self.cfg.vitals.target_day, self.cfg.vitals.difficulty_gain);
         self.sleeps += 1;
@@ -950,6 +1100,8 @@ impl Mind for Brain {
             thinks: self.thinks,
             recruited: self.recruited,
             pruned: self.pruned,
+            deep_memories: self.deep.len(),
+            reflexes: self.reflexes,
         }
     }
 }

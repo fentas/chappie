@@ -184,6 +184,11 @@ impl World for Sandbox {
         if rng.next_f32() < STILL_FACE_PROB {
             return -0.4;
         }
+        // Failing to act on a real threat is traumatic — a hard, memorable penalty.
+        // This is the kind of one-shot event that burns a protective fast-lane reflex.
+        if self.expected_concept == "danger" && action.kind != ActionKind::Move {
+            return -1.0;
+        }
         // Continuous response-harmony: how in-tune the agent's response is with what
         // was presented (the world mirrors a fitting action; dissonance otherwise).
         let mut v = 0.6 * cosine(&action.target, &self.presented);
