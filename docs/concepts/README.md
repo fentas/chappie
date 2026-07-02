@@ -14,6 +14,7 @@ these capture the intent the code is reaching for.
 5. [Cognition](05-cognition.md) — decisions, dual-process (reflex vs thinking).
 6. [Development](06-development.md) — the life-cycle, embryo → real senses, the examined life.
 7. [Open Questions](07-open-questions.md) — the philosophical debates we haven't settled.
+8. [Valence & Drives](08-valence-and-drives.md) — good/bad as a learned curve; sleep as buffer reconciliation (Bitcoin-difficulty rhythm); boredom → creativity; reality-monitoring. *(supersedes the reward/energy sketches)*
 
 ## Reading guide
 
