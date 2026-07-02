@@ -314,8 +314,8 @@ fn final_report(brain: &Brain, exam: &Examiner, cfg: &Config) {
     println!("║  LIFE REPORT                                                          ║");
     println!("╚═══════════════════════════════════════════════════════════════════════╝");
     println!(
-        "lived {} ticks over {} sleep-days · final stage: {}",
-        st.tick, st.day, st.stage
+        "lived {} ticks over {} sleep-days · final stage: {} · escalated to thinking {} times",
+        st.tick, st.day, st.stage, st.thinks
     );
 
     let (first, last, best, auc) = if scores.is_empty() {
@@ -402,8 +402,8 @@ fn final_report(brain: &Brain, exam: &Examiner, cfg: &Config) {
     // git commit it ran against, so benchmark movements correlate to changes.
     let flavor = if cfg!(feature = "burn") { "burn" } else { "std" };
     println!(
-        "\nRESULT git={} build={} seed={} ticks={} bench_final={:.3} bench_best={:.3} bench_auc={:.3} bench_hard={:.3} bench_recall={:.3} reward={:.3} days={} stage={} peak_gpu_mb={:.0} peak_cpu_mb={:.0} gpu_budget={:.0} cpu_budget={:.0}",
-        git_hash(), flavor, cfg.seed, cfg.ticks, last, best, auc, last_hard, last_recall, st.avg_reward, st.day, st.stage,
+        "\nRESULT git={} build={} seed={} ticks={} bench_final={:.3} bench_best={:.3} bench_auc={:.3} bench_hard={:.3} bench_recall={:.3} reward={:.3} thinks={} days={} stage={} peak_gpu_mb={:.0} peak_cpu_mb={:.0} gpu_budget={:.0} cpu_budget={:.0}",
+        git_hash(), flavor, cfg.seed, cfg.ticks, last, best, auc, last_hard, last_recall, st.avg_reward, st.thinks, st.day, st.stage,
         st.peak_gpu_mb, st.peak_cpu_mb, cfg.budget.gpu_mb, cfg.budget.cpu_mb
     );
 }

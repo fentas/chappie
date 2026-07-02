@@ -296,6 +296,8 @@ pub struct MindStats {
     pub total_mb: f32,
     pub sleeps: u64,
     pub avg_reward: f32,
+    /// How many decisions this life required escalating from reflex to "thinking".
+    pub thinks: u64,
 }
 
 // ============================================================================
@@ -443,6 +445,25 @@ impl Default for BudgetCfg {
     }
 }
 
+/// Dual-process control: when consensus is conflicted (low agreement), stop
+/// reflexing and "think" — widen the coalition and re-deliberate.
+#[derive(Clone, Debug)]
+pub struct ThinkingCfg {
+    /// Below this consensus agreement, escalate to thinking.
+    pub agreement_threshold: f32,
+    /// Max escalation rounds before committing anyway.
+    pub max_escalations: usize,
+    /// Extra resident agents to pull into deliberation per escalation.
+    pub widen_participants: usize,
+    /// Multiplier that lowers the participation floor while thinking.
+    pub widen_floor_mult: f32,
+}
+impl Default for ThinkingCfg {
+    fn default() -> Self {
+        Self { agreement_threshold: 0.65, max_escalations: 2, widen_participants: 4, widen_floor_mult: 0.5 }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Config {
     pub seed: u64,
@@ -455,6 +476,7 @@ pub struct Config {
     pub sleep: SleepCfg,
     pub vitals: VitalsCfg,
     pub budget: BudgetCfg,
+    pub thinking: ThinkingCfg,
 }
 
 impl Default for Config {
@@ -470,6 +492,7 @@ impl Default for Config {
             sleep: SleepCfg::default(),
             vitals: VitalsCfg::default(),
             budget: BudgetCfg::default(),
+            thinking: ThinkingCfg::default(),
         }
     }
 }
@@ -516,6 +539,10 @@ impl Config {
             "budget.gpu_mb" => self.budget.gpu_mb = pf!(),
             "budget.cpu_mb" => self.budget.cpu_mb = pf!(),
             "budget.max_participants" => self.budget.max_participants = pf!(),
+            "thinking.agreement_threshold" => self.thinking.agreement_threshold = pf!(),
+            "thinking.max_escalations" => self.thinking.max_escalations = pf!(),
+            "thinking.widen_participants" => self.thinking.widen_participants = pf!(),
+            "thinking.widen_floor_mult" => self.thinking.widen_floor_mult = pf!(),
             _ => return false,
         }
         true

@@ -389,6 +389,25 @@ impl Harness {
         participants
     }
 
+    /// Re-select a WIDER set of participants from the currently-resident agents
+    /// (relaxed cap + floor), reusing the priorities `schedule` already computed.
+    /// This is the "think harder" step — bring more perspectives to a conflicted
+    /// call without re-placing tiers or drawing new randomness.
+    pub fn widen_participants(&mut self, extra: usize, floor_mult: f32) -> Vec<AgentId> {
+        let mp = self.cfg.budget.max_participants + extra;
+        let pf = self.cfg.priority.participate_floor * floor_mult;
+        let mut scored: Vec<(AgentId, f32)> = self
+            .slots
+            .iter()
+            .filter(|s| s.placement != Placement::Cold && s.priority > pf)
+            .map(|s| (s.agent.id(), s.priority))
+            .collect();
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        let participants: Vec<AgentId> = scored.iter().take(mp).map(|(a, _)| *a).collect();
+        self.active = participants.clone();
+        participants
+    }
+
     /// Two-round deliberation among participants; warm (CPU) bids are down-weighted.
     pub fn deliberate(
         &mut self,

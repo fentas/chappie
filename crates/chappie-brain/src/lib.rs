@@ -246,6 +246,7 @@ pub struct Brain {
     stage: String,
     recent_rewards: Vec<f32>,
     sleeps: u64,
+    thinks: u64,
     pending: Option<Pending>,
     last_trace: Trace,
 }
@@ -268,6 +269,7 @@ impl Brain {
             stage: "infancy".to_string(),
             recent_rewards: Vec::new(),
             sleeps: 0,
+            thinks: 0,
             pending: None,
             last_trace: Trace::default(),
         }
@@ -326,13 +328,33 @@ impl Mind for Brain {
         let lead = self.thalamus.lead(surprise, self.vitals.curiosity, self.cfg.hemisphere.novelty_threshold);
 
         // 4. Schedule: rank by priority, place agents on GPU/CPU/cold.
-        let active = self.cortex.schedule(&query, &mut self.rng);
+        let mut active = self.cortex.schedule(&query, &mut self.rng);
 
-        // 5. Deliberate → consensus.
+        // 5. Deliberate → consensus (System 1: the fast reflex).
         let proposals = self
             .cortex
             .deliberate(&query, dom, lead, self.vitals.curiosity, &mut self.rng);
-        let decision = self.cortex.consensus(&proposals);
+        let mut decision = self.cortex.consensus(&proposals);
+
+        // 5b. System 2: a split coalition (low agreement) means the reflex is
+        //     unsure — so THINK. Widen the coalition and re-deliberate until we're
+        //     decisive or hit the escalation cap. Cheap reflex most of the time;
+        //     expensive thinking only when genuinely conflicted.
+        let mut escalations = 0;
+        while decision.agreement < self.cfg.thinking.agreement_threshold
+            && escalations < self.cfg.thinking.max_escalations
+        {
+            let extra = self.cfg.thinking.widen_participants * (escalations + 1);
+            active = self.cortex.widen_participants(extra, self.cfg.thinking.widen_floor_mult);
+            let wider = self
+                .cortex
+                .deliberate(&query, dom, lead, self.vitals.curiosity, &mut self.rng);
+            decision = self.cortex.consensus(&wider);
+            escalations += 1;
+        }
+        if escalations > 0 {
+            self.thinks += 1;
+        }
 
         // 6. Trace.
         self.last_trace = Trace {
@@ -466,6 +488,7 @@ impl Mind for Brain {
             total_mb: self.cortex.total_mb(),
             sleeps: self.sleeps,
             avg_reward: avg,
+            thinks: self.thinks,
         }
     }
 }
