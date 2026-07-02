@@ -13,6 +13,20 @@ use chappie_core::*;
 use chappie_harness::{Agent, Decision, Harness};
 use serde::{Deserialize, Serialize};
 
+/// An episode's activation fingerprint: which agents fired, as a normalized
+/// vector over the agent population. Similarity between fingerprints is how the
+/// dream retrieves associated memories (content-addressable recall).
+fn fingerprint(active: &[AgentId], n: usize) -> Vec<f32> {
+    let mut f = vec![0.0f32; n];
+    for &a in active {
+        if (a as usize) < n {
+            f[a as usize] = 1.0;
+        }
+    }
+    normalize(&mut f);
+    f
+}
+
 // ============================================================================
 // Senses — encode raw stimuli into percepts and assign salience.
 // ============================================================================
@@ -571,6 +585,20 @@ impl Mind for Brain {
         // keep-uncertain (still can't decide → raise priority so it resurfaces).
         let dream_len = self.cfg.sleep.dream_len;
         let unc = self.cfg.sleep.uncertain_threshold;
+        let n_agents = self.cortex.len().max(1);
+
+        // The dream's current fingerprint starts as today's activation pattern
+        // (which agents dominated the day) and drifts as the dream wanders.
+        let mut current_fp = vec![0.0f32; n_agents];
+        for e in episodes.iter().filter(|e| e.tick >= self.day_start_tick) {
+            for &a in &e.active_agents {
+                if (a as usize) < n_agents {
+                    current_fp[a as usize] += 1.0;
+                }
+            }
+        }
+        normalize(&mut current_fp);
+
         let mut endorsed = 0usize;
         let mut dismissed = 0usize;
         let mut kept = 0usize;
@@ -579,27 +607,41 @@ impl Mind for Brain {
             if n == 0 {
                 break;
             }
-            let idx = self.rng.next_range(n);
+            // Retrieve the memory most similar to the current fingerprint
+            // (× priority, + chaos) — content-addressable recall.
+            let mut idx = 0usize;
+            let mut best = f32::MIN;
+            for (i, e) in self.hippocampus.buf.iter().enumerate() {
+                let sim = cosine(&current_fp, &fingerprint(&e.active_agents, n_agents));
+                let score = sim * e.priority + 0.2 * self.rng.next_gauss();
+                if score > best {
+                    best = score;
+                    idx = i;
+                }
+            }
             let ep = self.hippocampus.buf[idx].clone();
             let (decision, _active) = self.dream_tick(&ep.query);
             let matches = decision.action.kind == ep.decision.kind;
             if decision.agreement < unc {
-                // Deep uncertainty — even after thinking, still split. Keep + resurface.
                 kept += 1;
                 self.hippocampus.buf[idx].priority =
                     (self.hippocampus.buf[idx].priority * 1.5).min(4.0);
             } else if ep.reward > 0.0 && matches {
-                // Endorse — re-affirmed. Strengthen the coalition and settle it.
                 endorsed += 1;
                 self.cortex.endorse(&decision.winners, ep.reward);
                 self.hippocampus.buf[idx].priority *= 0.7;
             } else if ep.reward <= 0.0 {
-                // Dismiss — confidently judged low-value. Mark for pruning.
                 dismissed += 1;
                 self.hippocampus.buf[idx].priority = 0.0;
             }
+            // Drift the fingerprint toward what we just relived (+ chaos) — the
+            // wander: the next retrieval comes from a nearby region of memory.
+            let fp = fingerprint(&ep.active_agents, n_agents);
+            for k in 0..n_agents {
+                current_fp[k] = 0.6 * current_fp[k] + 0.4 * fp[k] + 0.04 * self.rng.next_gauss();
+            }
+            normalize(&mut current_fp);
         }
-        // Forget the dismissed / faded.
         self.hippocampus.buf.retain(|e| e.priority > 0.05);
 
         // Offline weight training + forgetting.
