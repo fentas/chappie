@@ -66,7 +66,7 @@ END {
   for (k=1;k<=na;k++) { a=order[k]; if (!(a in arms)) continue
     printf "| %s |", a
     for (i=3;i<=ncol;i++) {
-      c=n[a,i]; if (c>0) { m=sum[a,i]/c; sd=sqrt(sum[a,i]*0? 0 : (sq[a,i]/c - m*m)); if (sd<0) sd=0
+      c=n[a,i]; if (c>0) { m=sum[a,i]/c; var=sq[a,i]/c-m*m; if (var<0) var=0; sd=sqrt(var)
         printf " %.3f±%.3f |", m, sd } else printf " – |"
     }
     printf "\n"
