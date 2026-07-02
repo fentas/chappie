@@ -421,10 +421,18 @@ pub struct SleepCfg {
     pub uncertain_threshold: f32,
     /// Probability a dream-tick blends the memory with another (creative mix).
     pub recombine_prob: f32,
+    /// Probability an unresolved memory intrudes on a waking tick (active recall).
+    pub intrude_prob: f32,
 }
 impl Default for SleepCfg {
     fn default() -> Self {
-        Self { replay_cap: 256, dream_len: 24, uncertain_threshold: 0.5, recombine_prob: 0.2 }
+        Self {
+            replay_cap: 256,
+            dream_len: 24,
+            uncertain_threshold: 0.5,
+            recombine_prob: 0.2,
+            intrude_prob: 0.05,
+        }
     }
 }
 
@@ -551,6 +559,7 @@ impl Config {
             "sleep.dream_len" => self.sleep.dream_len = pf!(),
             "sleep.uncertain_threshold" => self.sleep.uncertain_threshold = pf!(),
             "sleep.recombine_prob" => self.sleep.recombine_prob = pf!(),
+            "sleep.intrude_prob" => self.sleep.intrude_prob = pf!(),
             "vitals.energy_cost_base" => self.vitals.energy_cost_base = pf!(),
             "vitals.energy_cost_per_agent" => self.vitals.energy_cost_per_agent = pf!(),
             "vitals.tired_threshold" => self.vitals.tired_threshold = pf!(),

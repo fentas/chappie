@@ -329,6 +329,20 @@ impl Brain {
         self.goal = goal;
     }
 
+    /// The most deeply-unresolved memory (priority raised above 1.0 by repeated
+    /// uncertainty), if any — the thing most likely to intrude on waking.
+    fn most_unresolved(&self) -> Option<usize> {
+        let mut best = None;
+        let mut bestp = 1.0f32;
+        for (i, e) in self.hippocampus.buf.iter().enumerate() {
+            if e.priority > bestp {
+                bestp = e.priority;
+                best = Some(i);
+            }
+        }
+        best
+    }
+
     /// Relive one memory: re-derive a decision on its query with the *current*
     /// brain — the same schedule→deliberate→consensus loop as waking (including
     /// dual-process escalation). No perception, no energy, no new episode.
@@ -437,6 +451,18 @@ impl Mind for Brain {
                 target: vec![0.0; EMB_DIM],
                 confidence: 0.6,
             };
+        }
+
+        // Daytime recurrence: occasionally an unresolved (deeply-uncertain) memory
+        // intrudes on waking — re-processed with fresh context, and maybe settled.
+        if learn && self.rng.next_f32() < self.cfg.sleep.intrude_prob {
+            if let Some(idx) = self.most_unresolved() {
+                let q = self.hippocampus.buf[idx].query.clone();
+                let (decision, _) = self.dream_tick(&q);
+                if decision.agreement >= self.cfg.sleep.uncertain_threshold {
+                    self.hippocampus.buf[idx].priority *= 0.6; // settled with fresh context
+                }
+            }
         }
 
         // 1. Senses → percepts.
