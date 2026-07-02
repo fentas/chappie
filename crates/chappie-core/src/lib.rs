@@ -423,6 +423,8 @@ pub struct SleepCfg {
     pub recombine_prob: f32,
     /// Probability an unresolved memory intrudes on a waking tick (active recall).
     pub intrude_prob: f32,
+    /// Reward-prediction-error above this encodes a memory even if perceptually dull.
+    pub rpe_threshold: f32,
 }
 impl Default for SleepCfg {
     fn default() -> Self {
@@ -432,6 +434,7 @@ impl Default for SleepCfg {
             uncertain_threshold: 0.5,
             recombine_prob: 0.2,
             intrude_prob: 0.05,
+            rpe_threshold: 0.3,
         }
     }
 }
@@ -455,6 +458,11 @@ pub struct VitalsCfg {
     pub boredom_gain: f32,
     /// Above this boredom, the mind wanders inward (daydreams) while input is dull.
     pub bored_threshold: f32,
+    /// How much distress amplifies the value of positive/harmonic input (co-regulation).
+    pub coregulation_gain: f32,
+    /// Weight of self-soothing: a coherent/harmonic self-expression is intrinsically
+    /// a bit positive; a dissonant (conflicted) one a bit negative.
+    pub self_soothing: f32,
 }
 impl Default for VitalsCfg {
     fn default() -> Self {
@@ -468,6 +476,8 @@ impl Default for VitalsCfg {
             curiosity_reward_decay: 0.15,
             boredom_gain: 0.1,
             bored_threshold: 0.5,
+            coregulation_gain: 0.5,
+            self_soothing: 0.15,
         }
     }
 }
@@ -575,6 +585,7 @@ impl Config {
             "sleep.uncertain_threshold" => self.sleep.uncertain_threshold = pf!(),
             "sleep.recombine_prob" => self.sleep.recombine_prob = pf!(),
             "sleep.intrude_prob" => self.sleep.intrude_prob = pf!(),
+            "sleep.rpe_threshold" => self.sleep.rpe_threshold = pf!(),
             "vitals.surprise_weight" => self.vitals.surprise_weight = pf!(),
             "vitals.time_fatigue" => self.vitals.time_fatigue = pf!(),
             "vitals.pressure_capacity" => self.vitals.pressure_capacity = pf!(),
@@ -584,6 +595,8 @@ impl Config {
             "vitals.curiosity_reward_decay" => self.vitals.curiosity_reward_decay = pf!(),
             "vitals.boredom_gain" => self.vitals.boredom_gain = pf!(),
             "vitals.bored_threshold" => self.vitals.bored_threshold = pf!(),
+            "vitals.coregulation_gain" => self.vitals.coregulation_gain = pf!(),
+            "vitals.self_soothing" => self.vitals.self_soothing = pf!(),
             "budget.gpu_mb" => self.budget.gpu_mb = pf!(),
             "budget.cpu_mb" => self.budget.cpu_mb = pf!(),
             "budget.max_participants" => self.budget.max_participants = pf!(),

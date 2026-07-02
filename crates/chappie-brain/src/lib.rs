@@ -256,10 +256,9 @@ pub struct Trace {
 }
 
 struct Pending {
+    episode: Episode,
     winners: Vec<AgentId>,
-    active: Vec<AgentId>,
-    surprise: f32,
-    encoded: bool,
+    perceptual_encode: bool,
 }
 
 // ============================================================================
@@ -309,6 +308,10 @@ pub struct Brain {
     thinks: u64,
     day_start_tick: u64,
     goal: Option<String>,
+    /// Running felt valence in [-1,1]; negative = distress (drives co-regulation).
+    mood: f32,
+    /// Running reward expectation, for reward-prediction-error-gated encoding.
+    reward_expectation: f32,
     pending: Option<Pending>,
     last_trace: Trace,
 }
@@ -341,6 +344,8 @@ impl Brain {
             thinks: 0,
             day_start_tick: 0,
             goal: None,
+            mood: 0.0,
+            reward_expectation: 0.5,
             pending: None,
             last_trace: Trace::default(),
         }
@@ -595,36 +600,33 @@ impl Mind for Brain {
             self.semantic.learn(&query);
             self.vitals.tick();
             self.vitals.accumulate(self.cfg.vitals.time_fatigue);
-            // Encoding gate: store only experience surprising enough to matter. The
-            // threshold rises with maturity, so a familiar world is mostly let pass
-            // unencoded — and unencoded experience builds no reconciliation pressure.
-            let encode = surprise > self.vitals.enc_threshold;
-            // Boredom falls when something novel grabs attention (encoded), rises
-            // with monotony (nothing worth encoding).
-            if encode {
+            // Encoding gate (perceptual half): is this surprising enough to matter?
+            // The threshold rises with maturity, so a familiar world is mostly let
+            // pass. The OUTCOME half (reward-prediction-error) is judged in reward().
+            let perceptual_encode = surprise > self.vitals.enc_threshold;
+            // Boredom falls when something novel grabs attention, rises with monotony.
+            if perceptual_encode {
                 self.vitals.boredom = (self.vitals.boredom - self.cfg.vitals.boredom_gain).max(0.0);
             } else {
                 self.vitals.boredom = (self.vitals.boredom + self.cfg.vitals.boredom_gain).min(1.0);
             }
-            if encode {
-                self.vitals.accumulate(self.cfg.vitals.surprise_weight * surprise);
-                self.hippocampus.record(Episode {
-                    tick: self.vitals.age_ticks,
-                    stage: self.stage.clone(),
-                    query,
-                    dominant: CONCEPTS[dom].to_string(),
-                    decision: decision.action.clone(),
-                    active_agents: active.clone(),
-                    reward: 0.0,
-                    surprise,
-                    priority: 1.0,
-                });
-            }
-            self.pending = Some(Pending {
-                winners: decision.winners.clone(),
-                active,
+            // Build the candidate memory; whether it is actually stored is decided in
+            // reward(), which also knows the outcome.
+            let episode = Episode {
+                tick: self.vitals.age_ticks,
+                stage: self.stage.clone(),
+                query,
+                dominant: CONCEPTS[dom].to_string(),
+                decision: decision.action.clone(),
+                active_agents: active,
+                reward: 0.0,
                 surprise,
-                encoded: encode,
+                priority: 1.0,
+            };
+            self.pending = Some(Pending {
+                episode,
+                winners: decision.winners.clone(),
+                perceptual_encode,
             });
         }
 
@@ -637,20 +639,43 @@ impl Mind for Brain {
         if self.recent_rewards.len() > 512 {
             self.recent_rewards.remove(0);
         }
-        if let Some(p) = self.pending.take() {
-            // Attach the reward only if this tick was actually encoded.
-            if p.encoded {
-                if let Some(ep) = self.hippocampus.buf.last_mut() {
-                    ep.reward = r;
-                }
+        if let Some(mut p) = self.pending.take() {
+            let surprise = p.episode.surprise;
+
+            // Self-soothing: a coherent/harmonic self-expression (high consensus
+            // agreement) is intrinsically a little positive; a dissonant one negative.
+            let self_harmony =
+                self.cfg.vitals.self_soothing * (p.episode.decision.confidence - 0.5);
+            // Felt valence = extrinsic (the world's response-harmony) + self-harmony,
+            // then co-regulation: when distressed, positive/harmonic input soothes more.
+            let mut valence = r + self_harmony;
+            let distress = (-self.mood).max(0.0);
+            if valence > 0.0 {
+                valence *= 1.0 + self.cfg.vitals.coregulation_gain * distress;
             }
+            valence = valence.clamp(-1.5, 1.5);
+            self.mood = (0.9 * self.mood + 0.1 * valence).clamp(-1.0, 1.0);
+
+            // Reward-prediction-error: an unexpectedly good/bad outcome is worth
+            // encoding even for a perceptually dull, familiar stimulus.
+            let rpe = (r - self.reward_expectation).abs();
+            self.reward_expectation = 0.95 * self.reward_expectation + 0.05 * r;
+
             self.vitals.feel(
                 r,
-                p.surprise,
+                surprise,
                 self.cfg.vitals.curiosity_gain,
                 self.cfg.vitals.curiosity_reward_decay,
             );
-            self.cortex.reinforce(&p.winners, &p.active, r);
+            // Learn from the *felt* valence (co-regulated + self-harmony), not raw reward.
+            self.cortex.reinforce(&p.winners, &p.episode.active_agents, valence);
+
+            if p.perceptual_encode || rpe > self.cfg.sleep.rpe_threshold {
+                p.episode.reward = valence;
+                self.vitals
+                    .accumulate(self.cfg.vitals.surprise_weight * surprise.max(rpe));
+                self.hippocampus.record(p.episode);
+            }
         }
     }
 
