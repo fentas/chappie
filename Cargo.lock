@@ -1190,6 +1190,8 @@ version = "0.1.0"
 dependencies = [
  "chappie-core",
  "chappie-harness",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

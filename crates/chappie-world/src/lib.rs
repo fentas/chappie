@@ -117,6 +117,16 @@ impl Sandbox {
     pub fn set_focus(&mut self, concept: Option<String>) {
         self.focus = concept;
     }
+
+    /// Restore the life stage from its name (for resuming a snapshot).
+    pub fn set_stage_by_name(&mut self, name: &str) {
+        self.stage = match name {
+            "childhood" => LifeStage::Childhood,
+            "adolescence" => LifeStage::Adolescence,
+            "adulthood" => LifeStage::Adulthood,
+            _ => LifeStage::Infancy,
+        };
+    }
 }
 
 impl Default for Sandbox {

@@ -45,6 +45,8 @@ pub trait Agent {
     /// Memory cost when resident, in MB — drives the placement budgets.
     fn footprint_mb(&self) -> f32;
     fn reliability(&self) -> f32;
+    /// Overwrite reliability — used when restoring a snapshot.
+    fn set_reliability(&mut self, r: f32);
 
     /// Called when the scheduler moves this agent between tiers (incl. to/from
     /// cold). Stubs just record it; a real model moves weights GPU↔CPU or frees.
@@ -131,6 +133,9 @@ impl Agent for StubAgent {
     }
     fn reliability(&self) -> f32 {
         self.reliability
+    }
+    fn set_reliability(&mut self, r: f32) {
+        self.reliability = r;
     }
 
     fn on_placement(&mut self, tier: Placement) {
@@ -230,6 +235,15 @@ impl Connectome {
     pub fn decay(&mut self, factor: f32) {
         for x in self.w.iter_mut() {
             *x *= factor;
+        }
+    }
+
+    pub fn weights(&self) -> &[f32] {
+        &self.w
+    }
+    pub fn set_weights(&mut self, w: &[f32]) {
+        if w.len() == self.w.len() {
+            self.w.copy_from_slice(w);
         }
     }
 
@@ -573,6 +587,23 @@ impl Harness {
     }
     pub fn total_mb(&self) -> f32 {
         self.total_mb
+    }
+    /// Per-agent reliability in id order (for snapshots).
+    pub fn export_reliabilities(&self) -> Vec<f32> {
+        self.slots.iter().map(|s| s.agent.reliability()).collect()
+    }
+    pub fn import_reliabilities(&mut self, r: &[f32]) {
+        for (i, s) in self.slots.iter_mut().enumerate() {
+            if let Some(&v) = r.get(i) {
+                s.agent.set_reliability(v);
+            }
+        }
+    }
+    pub fn connectome_weights(&self) -> Vec<f32> {
+        self.connectome.weights().to_vec()
+    }
+    pub fn set_connectome_weights(&mut self, w: &[f32]) {
+        self.connectome.set_weights(w);
     }
     pub fn gpu_budget(&self) -> f32 {
         self.cfg.budget.gpu_mb

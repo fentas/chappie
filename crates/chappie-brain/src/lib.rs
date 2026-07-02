@@ -11,6 +11,7 @@
 
 use chappie_core::*;
 use chappie_harness::{Agent, Harness};
+use serde::{Deserialize, Serialize};
 
 // ============================================================================
 // Senses — encode raw stimuli into percepts and assign salience.
@@ -230,6 +231,31 @@ struct Pending {
 }
 
 // ============================================================================
+// Snapshot — persistent learnable state (serialized at sleep, loaded on start).
+// ============================================================================
+
+/// A resumable slice of a life: what it learned (connectome + reliabilities +
+/// semantic prototypes) plus where it is (stage, day, drives, RNG). Agent net
+/// weights (Burn) are not captured yet — a follow-on.
+#[derive(Serialize, Deserialize)]
+pub struct Snapshot {
+    pub sleeps: u64,
+    pub day_start_tick: u64,
+    pub thinks: u64,
+    pub stage: String,
+    pub goal: Option<String>,
+    pub energy: f32,
+    pub curiosity: f32,
+    pub age_ticks: u64,
+    pub rng_state: u64,
+    pub reliabilities: Vec<f32>,
+    pub connectome: Vec<f32>,
+    pub semantic: Vec<Vec<f32>>,
+    pub working: Vec<(usize, f32)>,
+    pub recent_rewards: Vec<f32>,
+}
+
+// ============================================================================
 // Brain — the whole thing.
 // ============================================================================
 
@@ -295,6 +321,59 @@ impl Brain {
 
     pub fn cortex(&self) -> &Harness {
         &self.cortex
+    }
+
+    /// Capture the resumable learnable state.
+    pub fn snapshot(&self) -> Snapshot {
+        Snapshot {
+            sleeps: self.sleeps,
+            day_start_tick: self.day_start_tick,
+            thinks: self.thinks,
+            stage: self.stage.clone(),
+            goal: self.goal.clone(),
+            energy: self.vitals.energy,
+            curiosity: self.vitals.curiosity,
+            age_ticks: self.vitals.age_ticks,
+            rng_state: self.rng.state(),
+            reliabilities: self.cortex.export_reliabilities(),
+            connectome: self.cortex.connectome_weights(),
+            semantic: self.semantic.protos.clone(),
+            working: self.working.slots.clone(),
+            recent_rewards: self.recent_rewards.clone(),
+        }
+    }
+
+    /// Overlay a snapshot onto a freshly-built brain (same population).
+    pub fn restore(&mut self, s: Snapshot) {
+        self.sleeps = s.sleeps;
+        self.day_start_tick = s.day_start_tick;
+        self.thinks = s.thinks;
+        self.stage = s.stage;
+        self.goal = s.goal;
+        self.vitals.energy = s.energy;
+        self.vitals.curiosity = s.curiosity;
+        self.vitals.age_ticks = s.age_ticks;
+        self.rng.set_state(s.rng_state);
+        self.cortex.import_reliabilities(&s.reliabilities);
+        self.cortex.set_connectome_weights(&s.connectome);
+        self.semantic.protos = s.semantic;
+        self.working.slots = s.working;
+        self.recent_rewards = s.recent_rewards;
+    }
+
+    pub fn save_snapshot(&self, path: &str) -> std::io::Result<()> {
+        let json = serde_json::to_string(&self.snapshot())
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        std::fs::write(path, json)
+    }
+
+    /// Load a snapshot if the file exists and parses; returns whether it did.
+    pub fn try_load_snapshot(&mut self, path: &str) -> bool {
+        std::fs::read_to_string(path)
+            .ok()
+            .and_then(|txt| serde_json::from_str::<Snapshot>(&txt).ok())
+            .map(|snap| self.restore(snap))
+            .is_some()
     }
 }
 

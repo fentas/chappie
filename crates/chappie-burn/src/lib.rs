@@ -149,6 +149,9 @@ impl Agent for BurnAgent {
     fn reliability(&self) -> f32 {
         self.reliability
     }
+    fn set_reliability(&mut self, r: f32) {
+        self.reliability = r;
+    }
 
     fn on_placement(&mut self, tier: Placement) {
         // v1: weights stay resident (they're tiny) so learning is never lost;

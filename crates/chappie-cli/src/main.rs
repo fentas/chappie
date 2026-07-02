@@ -144,7 +144,7 @@ fn build_config() -> Config {
                 i += 2;
             }
             "--endless" => i += 1,
-            "--days" | "--diary-dir" | "--task-dir" => i += 2,
+            "--days" | "--diary-dir" | "--task-dir" | "--state-dir" => i += 2,
             other => {
                 eprintln!("warning: ignoring unknown arg '{other}'");
                 i += 1;
@@ -437,6 +437,7 @@ struct RunOpts {
     max_days: Option<u64>,
     diary_dir: String,
     task_dir: String,
+    state_dir: String,
 }
 
 impl RunOpts {
@@ -446,6 +447,7 @@ impl RunOpts {
             max_days: None,
             diary_dir: "diary".into(),
             task_dir: "tasks".into(),
+            state_dir: "state".into(),
         };
         let args: Vec<String> = std::env::args().collect();
         let mut i = 1;
@@ -471,6 +473,12 @@ impl RunOpts {
                     }
                     i += 2;
                 }
+                "--state-dir" => {
+                    if let Some(v) = args.get(i + 1) {
+                        o.state_dir = v.clone();
+                    }
+                    i += 2;
+                }
                 _ => i += 1,
             }
         }
@@ -491,6 +499,16 @@ fn run_endless(
     std::fs::create_dir_all(&inbox).ok();
     std::fs::create_dir_all(&done).ok();
     std::fs::create_dir_all(&opts.diary_dir).ok();
+    std::fs::create_dir_all(&opts.state_dir).ok();
+    let snap_path = format!("{}/latest.json", opts.state_dir);
+    if brain.try_load_snapshot(&snap_path) {
+        let st = brain.stats();
+        world.set_stage_by_name(&st.stage);
+        println!(
+            "  ⟳ resumed from snapshot — day {}, stage {}, age {} ticks",
+            st.day, st.stage, st.tick
+        );
+    }
     println!(
         "\n── Chappie is living (endless) ─ diary: {}/ · drop tasks in {}/ · Ctrl-C to stop ──",
         opts.diary_dir, inbox
@@ -524,6 +542,7 @@ fn run_endless(
         if brain.tired() {
             let dream = brain.sleep();
             write_diary(&opts.diary_dir, &dream, &brain.stats());
+            brain.save_snapshot(&snap_path).ok();
             println!(
                 "  💤 day {:>4} → diary  (reward {:+.2}, {} memories consolidated)",
                 dream.day, dream.day_reward, dream.replayed
