@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chappie — a brain-inspired cognitive architecture in Rust</title>
+<meta name="description" content="Many small specialist agents living a simulated life: attention-driven GPU/CPU placement, global-workspace consensus, sleep that trains weights.">
+<style>
+  :root{--bg:#0b0d10;--fg:#e7e9ee;--dim:#9aa3b2;--acc:#7cc4ff;--acc2:#ffd479;--line:#1c2128;--card:#12151a}
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:16px/1.6 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Inter,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  a{color:var(--acc);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:820px;margin:0 auto;padding:0 20px}
+  header{padding:72px 0 28px;border-bottom:1px solid var(--line)}
+  h1{font-size:44px;margin:0 0 6px;letter-spacing:-.02em}
+  .tag{color:var(--dim);font-size:19px;margin:0}
+  .chips{margin:22px 0 0;display:flex;gap:8px;flex-wrap:wrap}
+  .chip{border:1px solid var(--line);background:var(--card);color:var(--dim);
+    border-radius:999px;padding:4px 12px;font-size:13px}
+  section{padding:40px 0;border-bottom:1px solid var(--line)}
+  h2{font-size:14px;text-transform:uppercase;letter-spacing:.12em;color:var(--acc2);margin:0 0 16px}
+  p{color:#cdd3de}
+  pre{background:var(--card);border:1px solid var(--line);border-radius:10px;
+    padding:16px 18px;overflow:auto;color:var(--dim);font-size:13px;line-height:1.5}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:620px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .card b{color:var(--fg)}
+  .card span{color:var(--dim);font-size:14px}
+  code{background:var(--card);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:13px}
+  footer{padding:34px 0 70px;color:var(--dim);font-size:14px}
+  .cta{display:inline-block;margin-top:8px;border:1px solid var(--acc);border-radius:8px;
+    padding:8px 16px;color:var(--acc)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Chappie</h1>
+    <p class="tag">A brain-inspired, multi-agent cognitive architecture — in Rust.</p>
+    <div class="chips">
+      <span class="chip">Rust workspace</span>
+      <span class="chip">attention-driven GPU/CPU placement</span>
+      <span class="chip">global-workspace consensus</span>
+      <span class="chip">sleep that trains weights</span>
+      <span class="chip">Burn / wgpu</span>
+    </div>
+    <a class="cta" href="https://github.com/fentas/chappie">View on GitHub →</a>
+  </header>
+
+  <section>
+    <h2>The idea</h2>
+    <p>Instead of one big model, Chappie is a population of small specialist agents that
+    <em>live</em>. Every tick a scheduler ranks them by priority — relevance, plus coupling to
+    whoever is currently active — and places only the attended few on the GPU (hot); the working
+    set stays warm on CPU; the long tail is unloaded. They deliberate in a shared workspace and
+    reach consensus. When energy runs low, Chappie sleeps: it replays the day's episodic memory to
+    consolidate connections and <em>train</em> its long-term weights.</p>
+  </section>
+
+  <section>
+    <h2>One moment of life</h2>
+<pre>perceive → attend → schedule (GPU / CPU / cold) → deliberate
+        → consensus → act → record episode → [tired?] sleep → consolidate</pre>
+  </section>
+
+  <section>
+    <h2>Regions</h2>
+    <div class="grid">
+      <div class="card"><b>Senses + Thalamus</b><br><span>modality encoders → attention gate → routing</span></div>
+      <div class="card"><b>Cortex (L / R)</b><br><span>expert agents, two hemispheres for built-in diversity</span></div>
+      <div class="card"><b>Connectome</b><br><span>Hebbian weighted links — fire together, wire together</span></div>
+      <div class="card"><b>Hippocampus + Sleep</b><br><span>episodic heap → interleaved replay → weights</span></div>
+      <div class="card"><b>Vitals</b><br><span>energy &amp; curiosity drive the life-cycle</span></div>
+      <div class="card"><b>Examiner</b><br><span>benchmark battery, correlated to every git commit</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Memory = Complementary Learning Systems</h2>
+    <p>A fast, non-parametric <b>heap</b> (episodic memory) is replayed during sleep to slowly
+    improve <b>weights</b> (a real Burn network trained by autodiff on the GPU). Interleaved replay
+    keeps it from forgetting. The result: a model that measurably improves over a lifetime.</p>
+  </section>
+
+  <section>
+    <h2>Run it</h2>
+<pre>git clone https://github.com/fentas/chappie &amp;&amp; cd chappie
+mise run life            # one deterministic life (pure-std, fast)
+mise run life-burn       # with the Burn neural agent (long-term memory)
+mise run bench           # record a git-tagged benchmark</pre>
+  </section>
+
+  <footer>
+    Chappie is research code, built in the open. ·
+    <a href="https://github.com/fentas/chappie">github.com/fentas/chappie</a>
+  </footer>
+
+</div>
+</body>
+</html>
