@@ -7,6 +7,10 @@
 
 use chappie_core::*;
 
+/// How often the world goes "still-face" — non-contingent, no harmonic response
+/// regardless of the action. Inherently distressing (Tronick).
+const STILL_FACE_PROB: f32 = 0.06;
+
 pub trait World {
     /// Produce the next scene. Records what a good response would be.
     fn observe(&mut self, rng: &mut Rng) -> Vec<Stimulus>;
@@ -96,6 +100,8 @@ pub struct Sandbox {
     expected_kind: ActionKind,
     since_advance: u64,
     focus: Option<String>,
+    /// Embedding of what was just presented — the target the world mirrors.
+    presented: Embedding,
 }
 
 impl Sandbox {
@@ -106,6 +112,7 @@ impl Sandbox {
             expected_kind: ActionKind::Speak,
             since_advance: 0,
             focus: None,
+            presented: embed(&[("visual", 1.0)]),
         }
     }
 
@@ -147,6 +154,7 @@ impl World for Sandbox {
         let dom = dom_name.as_str();
         self.expected_concept = dom_name.clone();
         self.expected_kind = expected_kind(dom);
+        self.presented = embed(&[(dom, 1.0)]);
 
         let mut stimuli = Vec::new();
         // Dominant stimulus: strong, clean.
@@ -169,24 +177,27 @@ impl World for Sandbox {
         stimuli
     }
 
-    fn step(&mut self, action: &Action, _rng: &mut Rng) -> f32 {
-        let mut r = 0.0f32;
-        // Right kind of response?
-        if action.kind == self.expected_kind {
-            r += 0.6;
-        } else if action.kind == ActionKind::Attend || action.kind == ActionKind::Noop {
-            r -= 0.1; // hesitation is mildly bad, not as bad as a wrong act
-        } else {
-            r -= 0.3;
-        }
-        // Correctly identified the thing?
-        if action.utterance == self.expected_concept {
-            r += 0.4;
-        }
-        // Reward calibrated confidence a touch.
-        r += 0.1 * (action.confidence - 0.5);
+    fn step(&mut self, action: &Action, rng: &mut Rng) -> f32 {
         self.since_advance += 1;
-        r.clamp(-1.0, 1.0)
+        // Still-face: the world sometimes goes non-contingent — no harmonic response
+        // regardless of what the agent did. Inherently distressing.
+        if rng.next_f32() < STILL_FACE_PROB {
+            return -0.4;
+        }
+        // Continuous response-harmony: how in-tune the agent's response is with what
+        // was presented (the world mirrors a fitting action; dissonance otherwise).
+        let mut v = 0.6 * cosine(&action.target, &self.presented);
+        if action.kind == self.expected_kind {
+            v += 0.3;
+        } else if action.kind == ActionKind::Noop {
+            v -= 0.3;
+        } else {
+            v -= 0.2;
+        }
+        if action.utterance == self.expected_concept {
+            v += 0.2;
+        }
+        v.clamp(-1.0, 1.0)
     }
 
     fn advance(&mut self, competence: f32) {
