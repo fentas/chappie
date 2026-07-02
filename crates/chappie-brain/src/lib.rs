@@ -10,7 +10,7 @@
 //! `Cortex` for Burn/Ollama models, and this loop is unchanged.
 
 use chappie_core::*;
-use chappie_harness::{Agent, Harness};
+use chappie_harness::{Agent, Decision, Harness};
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
@@ -315,6 +315,38 @@ impl Brain {
         self.goal = goal;
     }
 
+    /// Relive one memory: re-derive a decision on its query with the *current*
+    /// brain — the same schedule→deliberate→consensus loop as waking (including
+    /// dual-process escalation). No perception, no energy, no new episode.
+    fn dream_tick(&mut self, query: &Embedding) -> (Decision, Vec<AgentId>) {
+        let dom = argmax(query);
+        let surprise = self.semantic.novelty(query);
+        let lead =
+            self.thalamus
+                .lead(surprise, self.vitals.curiosity, self.cfg.hemisphere.novelty_threshold);
+        let mut active = self.cortex.schedule(query, &mut self.rng);
+        let proposals =
+            self.cortex
+                .deliberate(query, dom, lead, self.vitals.curiosity, &mut self.rng);
+        let mut decision = self.cortex.consensus(&proposals);
+        let mut esc = 0;
+        while decision.agreement < self.cfg.thinking.agreement_threshold
+            && esc < self.cfg.thinking.max_escalations
+        {
+            active = self.cortex.widen_participants(
+                self.cfg.thinking.widen_participants * (esc + 1),
+                self.cfg.thinking.widen_floor_mult,
+            );
+            let wider =
+                self.cortex
+                    .deliberate(query, dom, lead, self.vitals.curiosity, &mut self.rng);
+            decision = self.cortex.consensus(&wider);
+            esc += 1;
+        }
+        self.cortex.end_tick();
+        (decision, active)
+    }
+
     pub fn trace(&self) -> Trace {
         self.last_trace.clone()
     }
@@ -531,6 +563,23 @@ impl Mind for Brain {
 
     fn sleep(&mut self) -> DreamLog {
         let episodes = self.hippocampus.buf.clone();
+
+        // Dream: relive sampled memories through the *current* brain and endorse
+        // (strengthen) the ones it still agrees with. Same loop as waking, fed by
+        // internal input instead of the world.
+        let dream_len = if episodes.is_empty() { 0 } else { self.cfg.sleep.dream_len };
+        let mut endorsed = 0usize;
+        for _ in 0..dream_len {
+            let idx = self.rng.next_range(episodes.len());
+            let ep = episodes[idx].clone();
+            let (decision, _active) = self.dream_tick(&ep.query);
+            if ep.reward > 0.0 && decision.action.kind == ep.decision.kind {
+                endorsed += 1;
+                self.cortex.endorse(&decision.winners, ep.reward);
+            }
+        }
+
+        // Offline weight training + forgetting.
         self.cortex.consolidate(&episodes, &mut self.rng);
 
         let mut new_protos = 0usize;
@@ -571,7 +620,7 @@ impl Mind for Brain {
             replayed: episodes.len(),
             strengthened,
             new_prototypes: new_protos,
-            note: format!("consolidated {} episodes ({} today)", episodes.len(), day_episodes),
+            note: format!("relived {dream_len}, endorsed {endorsed} ({day_episodes} today)"),
             day_reward,
             concept_counts,
             goal: self.goal.clone(),

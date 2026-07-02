@@ -412,10 +412,12 @@ impl Default for HebbianCfg {
 #[derive(Clone, Debug)]
 pub struct SleepCfg {
     pub replay_cap: usize,
+    /// How many memories to relive per sleep (dream-ticks through the loop).
+    pub dream_len: usize,
 }
 impl Default for SleepCfg {
     fn default() -> Self {
-        Self { replay_cap: 256 }
+        Self { replay_cap: 256, dream_len: 24 }
     }
 }
 
@@ -539,6 +541,7 @@ impl Config {
             "hebbian.decay" => self.hebbian.decay = pf!(),
             "hebbian.max_weight" => self.hebbian.max_weight = pf!(),
             "sleep.replay_cap" => self.sleep.replay_cap = pf!(),
+            "sleep.dream_len" => self.sleep.dream_len = pf!(),
             "vitals.energy_cost_base" => self.vitals.energy_cost_base = pf!(),
             "vitals.energy_cost_per_agent" => self.vitals.energy_cost_per_agent = pf!(),
             "vitals.tired_threshold" => self.vitals.tired_threshold = pf!(),

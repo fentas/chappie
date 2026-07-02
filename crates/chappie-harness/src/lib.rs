@@ -534,21 +534,24 @@ impl Harness {
     /// Sleep-time consolidation: decay, then reinforce rewarded co-activations,
     /// then let each agent update its own weights (adapter / LoRA step).
     pub fn consolidate(&mut self, episodes: &[Episode], rng: &mut Rng) {
+        // Forgetting: unused links fade. Strengthening now flows through dream
+        // endorsement (see `endorse`) — the connectome consolidates what the
+        // current brain re-affirms while reliving, not a flat batch of the past.
         self.connectome.decay(self.cfg.hebbian.decay);
-        let rate = self.cfg.hebbian.sleep_rate;
-        for e in episodes {
-            if e.reward > 0.0 {
-                let a = &e.active_agents;
-                for i in 0..a.len() {
-                    for j in (i + 1)..a.len() {
-                        self.connectome
-                            .strengthen(a[i] as usize, a[j] as usize, rate * e.reward);
-                    }
-                }
-            }
-        }
         for s in self.slots.iter_mut() {
             s.agent.consolidate(episodes, rng);
+        }
+    }
+
+    /// Sleep-time endorsement: strengthen the wiring among a coalition the current
+    /// brain re-affirmed while reliving a memory (scaled by that memory's value).
+    pub fn endorse(&mut self, agents: &[AgentId], strength: f32) {
+        let rate = self.cfg.hebbian.sleep_rate * strength.max(0.0);
+        for i in 0..agents.len() {
+            for j in (i + 1)..agents.len() {
+                self.connectome
+                    .strengthen(agents[i] as usize, agents[j] as usize, rate);
+            }
         }
     }
 
