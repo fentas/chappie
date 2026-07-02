@@ -12,7 +12,7 @@ mkdir -p benchmarks
 feat=()
 [ "${FLAVOR:-std}" = "burn" ] && feat=(--features burn)
 
-result=$(cargo run -q -p chappie-cli "${feat[@]}" -- "$@" 2>/dev/null | grep '^RESULT' || true)
+result=$(cargo run -q -p chappie-cli --bin chappie "${feat[@]}" -- "$@" 2>/dev/null | grep '^RESULT' || true)
 [ -z "$result" ] && { echo "bench: no RESULT line produced" >&2; exit 1; }
 
 ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
