@@ -67,6 +67,10 @@ pub const CONCEPTS: [&str; 12] = [
 
 pub const EMB_DIM: usize = 12;
 
+/// Marker label for a "recall" cue: a stimulus asking the mind to report what it
+/// just perceived, from short-term working memory. Fails until that memory exists.
+pub const RECALL_CUE: &str = "__recall__";
+
 /// A point in concept space.
 pub type Embedding = Vec<f32>;
 

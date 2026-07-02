@@ -74,18 +74,20 @@ fn main() {
             let score = exam.examine(&mut brain, t as u64, world.stage());
             world.advance(score);
             brain.set_stage(world.stage());
+            let (hard, recall) = exam.latest().map(|r| (r.hard, r.recall)).unwrap_or((0.0, 0.0));
             let st = brain.stats();
             println!(
-                "  t={:>5} {:>11} │ bench {} {:.0}% │ reward {:+.2} │ gpu {} cpu {} cold {} │ cur {:.2}",
+                "  t={:>5} {:>11} │ clean {} {:.0}% │ hard {:.0}% recall {:.0}% │ rwd {:+.2} │ gpu{} cpu{} cold{}",
                 t,
                 st.stage,
-                bar(score, 10),
+                bar(score, 8),
                 score * 100.0,
+                hard * 100.0,
+                recall * 100.0,
                 st.avg_reward,
                 st.gpu_count,
                 st.cpu_count,
                 st.cold_count,
-                st.curiosity,
             );
             #[cfg(feature = "burn")]
             if let Some(nid) = neo_id {
@@ -300,7 +302,13 @@ fn narrate_tick(t: usize, tr: &chappie_brain::Trace, reward: f32) {
 
 fn final_report(brain: &Brain, exam: &Examiner, cfg: &Config) {
     let st = brain.stats();
-    let scores: Vec<f32> = exam.history.iter().map(|r| r.score).collect();
+    let scores: Vec<f32> = exam.history.iter().map(|r| r.clean).collect();
+    let recall_curve: Vec<f32> = exam.history.iter().map(|r| r.recall).collect();
+    let (last_hard, last_recall) = exam
+        .history
+        .last()
+        .map(|r| (r.hard, r.recall))
+        .unwrap_or((0.0, 0.0));
 
     println!("\n╔═══════════════════════════════════════════════════════════════════════╗");
     println!("║  LIFE REPORT                                                          ║");
@@ -321,16 +329,21 @@ fn final_report(brain: &Brain, exam: &Examiner, cfg: &Config) {
     };
 
     if !scores.is_empty() {
-        println!("\nbenchmark over life:");
-        println!("  {}", spark(&scores));
+        println!("\nbenchmark over life (clean · hard · recall):");
         println!(
-            "  start {:.0}%  →  end {:.0}%  (best {:.0}%, avg {:.0}%)   [Δ {:+.0} pts]",
+            "  clean  {}  start {:.0}% → end {:.0}%  (best {:.0}%, avg {:.0}%)",
+            spark(&scores),
             first * 100.0,
             last * 100.0,
             best * 100.0,
-            auc * 100.0,
-            (last - first) * 100.0
+            auc * 100.0
         );
+        println!(
+            "  recall {}  end {:.0}%  (needs short-term memory — near 0 until working memory exists)",
+            spark(&recall_curve),
+            last_recall * 100.0
+        );
+        println!("  hard   end {:.0}%  (noisy + composite probes)", last_hard * 100.0);
     }
 
     if let Some(rep) = exam.history.last() {
@@ -389,8 +402,8 @@ fn final_report(brain: &Brain, exam: &Examiner, cfg: &Config) {
     // git commit it ran against, so benchmark movements correlate to changes.
     let flavor = if cfg!(feature = "burn") { "burn" } else { "std" };
     println!(
-        "\nRESULT git={} build={} seed={} ticks={} bench_final={:.3} bench_best={:.3} bench_auc={:.3} reward={:.3} days={} stage={} peak_gpu_mb={:.0} peak_cpu_mb={:.0} gpu_budget={:.0} cpu_budget={:.0}",
-        git_hash(), flavor, cfg.seed, cfg.ticks, last, best, auc, st.avg_reward, st.day, st.stage,
+        "\nRESULT git={} build={} seed={} ticks={} bench_final={:.3} bench_best={:.3} bench_auc={:.3} bench_hard={:.3} bench_recall={:.3} reward={:.3} days={} stage={} peak_gpu_mb={:.0} peak_cpu_mb={:.0} gpu_budget={:.0} cpu_budget={:.0}",
+        git_hash(), flavor, cfg.seed, cfg.ticks, last, best, auc, last_hard, last_recall, st.avg_reward, st.day, st.stage,
         st.peak_gpu_mb, st.peak_cpu_mb, cfg.budget.gpu_mb, cfg.budget.cpu_mb
     );
 }
