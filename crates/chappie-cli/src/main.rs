@@ -339,7 +339,7 @@ fn final_report(brain: &Brain, exam: &Examiner, cfg: &Config) {
             auc * 100.0
         );
         println!(
-            "  recall {}  end {:.0}%  (needs short-term memory — near 0 until working memory exists)",
+            "  recall {}  end {:.0}%  (cue→recall; solved by short-term working memory)",
             spark(&recall_curve),
             last_recall * 100.0
         );

@@ -160,6 +160,53 @@ impl Vitals {
 }
 
 // ============================================================================
+// Working memory — the short-term, fast, *decaying* heap (non-parametric).
+//
+// Complements the long-term stores: where the Hippocampus is the replay buffer
+// and the Cortex holds slow weights, this is seconds-scale scratch space. A
+// "recall" cue is answered from here; without it, the recall benchmark is chance.
+// ============================================================================
+
+struct WorkingMemory {
+    slots: Vec<(usize, f32)>, // (concept index, strength)
+    cap: usize,
+    decay: f32,
+}
+
+impl WorkingMemory {
+    fn new() -> Self {
+        WorkingMemory { slots: Vec::new(), cap: 7, decay: 0.6 }
+    }
+    /// Age every trace; forget the faint ones.
+    fn decay(&mut self) {
+        for s in self.slots.iter_mut() {
+            s.1 *= self.decay;
+        }
+        self.slots.retain(|s| s.1 > 0.05);
+    }
+    /// Lay down (or refresh) a trace of a just-perceived concept.
+    fn push(&mut self, concept: usize, strength: f32) {
+        if let Some(slot) = self.slots.iter_mut().find(|s| s.0 == concept) {
+            slot.1 = slot.1.max(strength);
+        } else {
+            self.slots.push((concept, strength));
+        }
+        if self.slots.len() > self.cap {
+            self.slots
+                .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            self.slots.truncate(self.cap);
+        }
+    }
+    /// The freshest / strongest trace — "what did I just perceive?"
+    fn recall(&self) -> Option<usize> {
+        self.slots
+            .iter()
+            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|s| s.0)
+    }
+}
+
+// ============================================================================
 // Trace — a peek at one tick, for the CLI narration.
 // ============================================================================
 
@@ -193,6 +240,7 @@ pub struct Brain {
     hippocampus: Hippocampus,
     semantic: Semantic,
     vitals: Vitals,
+    working: WorkingMemory,
     rng: Rng,
     cfg: Config,
     stage: String,
@@ -214,6 +262,7 @@ impl Brain {
             hippocampus: Hippocampus { buf: Vec::new(), cap },
             semantic: Semantic { protos: Vec::new() },
             vitals: Vitals { energy: 1.0, curiosity: 0.3, age_ticks: 0 },
+            working: WorkingMemory::new(),
             rng,
             cfg,
             stage: "infancy".to_string(),
@@ -239,6 +288,20 @@ impl Brain {
 
 impl Mind for Brain {
     fn perceive_act(&mut self, stimuli: &[Stimulus], learn: bool) -> Action {
+        // 0. A recall cue is answered straight from short-term working memory —
+        //    no perception, no cortex. This is what the recall benchmark tests.
+        if stimuli.iter().any(|s| s.label == RECALL_CUE) {
+            self.working.decay();
+            let utter = self.working.recall().map(|c| CONCEPTS[c].to_string());
+            self.cortex.end_tick();
+            return Action {
+                kind: if utter.is_some() { ActionKind::Speak } else { ActionKind::Noop },
+                utterance: utter.unwrap_or_default(),
+                target: vec![0.0; EMB_DIM],
+                confidence: 0.6,
+            };
+        }
+
         // 1. Senses → percepts.
         let percepts: Vec<Percept> = stimuli
             .iter()
@@ -254,6 +317,11 @@ impl Mind for Brain {
 
         // 3. Fuse → query + dominant; surprise; hemisphere lead.
         let (query, dom) = self.thalamus.fuse(&gated);
+
+        // Lay down a short-term trace of what we just perceived (ages each tick).
+        self.working.decay();
+        self.working.push(dom, 1.0);
+
         let surprise = self.semantic.novelty(&query);
         let lead = self.thalamus.lead(surprise, self.vitals.curiosity, self.cfg.hemisphere.novelty_threshold);
 
