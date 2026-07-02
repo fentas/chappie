@@ -436,21 +436,30 @@ impl Default for SleepCfg {
     }
 }
 
-/// Homeostatic drives.
+/// Homeostatic drives. Sleep is driven by a *reconciliation buffer*, not fuel.
 #[derive(Clone, Debug)]
 pub struct VitalsCfg {
-    pub energy_cost_base: f32,
-    pub energy_cost_per_agent: f32,
-    pub tired_threshold: f32,
+    /// Reconciliation pressure added per unit of ENCODED surprise.
+    pub surprise_weight: f32,
+    /// Pressure added every waking tick (time-fatigue).
+    pub time_fatigue: f32,
+    /// Sleep when pressure exceeds this.
+    pub pressure_capacity: f32,
+    /// Target awake ticks per "day" — the Bitcoin block-time analog.
+    pub target_day: f32,
+    /// How fast the encoding threshold adapts toward the target day (difficulty).
+    pub difficulty_gain: f32,
     pub curiosity_gain: f32,
     pub curiosity_reward_decay: f32,
 }
 impl Default for VitalsCfg {
     fn default() -> Self {
         Self {
-            energy_cost_base: 0.02,
-            energy_cost_per_agent: 0.008,
-            tired_threshold: 0.2,
+            surprise_weight: 0.25,
+            time_fatigue: 0.015,
+            pressure_capacity: 1.0,
+            target_day: 40.0,
+            difficulty_gain: 0.05,
             curiosity_gain: 0.1,
             curiosity_reward_decay: 0.15,
         }
@@ -560,9 +569,11 @@ impl Config {
             "sleep.uncertain_threshold" => self.sleep.uncertain_threshold = pf!(),
             "sleep.recombine_prob" => self.sleep.recombine_prob = pf!(),
             "sleep.intrude_prob" => self.sleep.intrude_prob = pf!(),
-            "vitals.energy_cost_base" => self.vitals.energy_cost_base = pf!(),
-            "vitals.energy_cost_per_agent" => self.vitals.energy_cost_per_agent = pf!(),
-            "vitals.tired_threshold" => self.vitals.tired_threshold = pf!(),
+            "vitals.surprise_weight" => self.vitals.surprise_weight = pf!(),
+            "vitals.time_fatigue" => self.vitals.time_fatigue = pf!(),
+            "vitals.pressure_capacity" => self.vitals.pressure_capacity = pf!(),
+            "vitals.target_day" => self.vitals.target_day = pf!(),
+            "vitals.difficulty_gain" => self.vitals.difficulty_gain = pf!(),
             "vitals.curiosity_gain" => self.vitals.curiosity_gain = pf!(),
             "vitals.curiosity_reward_decay" => self.vitals.curiosity_reward_decay = pf!(),
             "budget.gpu_mb" => self.budget.gpu_mb = pf!(),

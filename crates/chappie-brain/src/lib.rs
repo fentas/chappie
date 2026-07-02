@@ -156,21 +156,36 @@ impl Hippocampus {
 // ============================================================================
 
 struct Vitals {
-    energy: f32,
     curiosity: f32,
     age_ticks: u64,
+    /// Reconciliation pressure: rises with encoded surprise + time; sleep resets it.
+    pressure: f32,
+    /// Ticks since last sleep — the "day" whose length the rhythm targets.
+    ticks_awake: u64,
+    /// Encoding difficulty: how surprising an experience must be to be stored.
+    enc_threshold: f32,
 }
 
 impl Vitals {
-    fn spend(&mut self, cost: f32) {
-        self.energy = (self.energy - cost).max(0.0);
+    fn tick(&mut self) {
         self.age_ticks += 1;
+        self.ticks_awake += 1;
     }
-    fn rest(&mut self) {
-        self.energy = 1.0;
+    fn accumulate(&mut self, amount: f32) {
+        self.pressure += amount;
     }
     fn feel(&mut self, reward: f32, surprise: f32, gain: f32, decay: f32) {
         self.curiosity = (self.curiosity + gain * surprise - decay * reward.max(0.0)).clamp(0.0, 1.0);
+    }
+    /// Wake: measure the day just lived, adapt the encoding threshold toward the
+    /// target day length (Bitcoin-style difficulty), and reset the buffer.
+    fn reconcile(&mut self, target_day: f32, gain: f32) -> u64 {
+        let day = self.ticks_awake;
+        let err = (target_day - day as f32) / target_day.max(1.0); // >0 ⇒ day too short
+        self.enc_threshold = (self.enc_threshold + gain * err).clamp(0.05, 0.9);
+        self.pressure = 0.0;
+        self.ticks_awake = 0;
+        day
     }
 }
 
@@ -242,6 +257,7 @@ struct Pending {
     winners: Vec<AgentId>,
     active: Vec<AgentId>,
     surprise: f32,
+    encoded: bool,
 }
 
 // ============================================================================
@@ -258,7 +274,9 @@ pub struct Snapshot {
     pub thinks: u64,
     pub stage: String,
     pub goal: Option<String>,
-    pub energy: f32,
+    pub pressure: f32,
+    pub ticks_awake: u64,
+    pub enc_threshold: f32,
     pub curiosity: f32,
     pub age_ticks: u64,
     pub rng_state: u64,
@@ -304,7 +322,13 @@ impl Brain {
             cortex,
             hippocampus: Hippocampus { buf: Vec::new(), cap },
             semantic: Semantic { protos: Vec::new() },
-            vitals: Vitals { energy: 1.0, curiosity: 0.3, age_ticks: 0 },
+            vitals: Vitals {
+                curiosity: 0.3,
+                age_ticks: 0,
+                pressure: 0.0,
+                ticks_awake: 0,
+                enc_threshold: 0.15,
+            },
             working: WorkingMemory::new(),
             rng,
             cfg,
@@ -391,7 +415,9 @@ impl Brain {
             thinks: self.thinks,
             stage: self.stage.clone(),
             goal: self.goal.clone(),
-            energy: self.vitals.energy,
+            pressure: self.vitals.pressure,
+            ticks_awake: self.vitals.ticks_awake,
+            enc_threshold: self.vitals.enc_threshold,
             curiosity: self.vitals.curiosity,
             age_ticks: self.vitals.age_ticks,
             rng_state: self.rng.state(),
@@ -410,7 +436,9 @@ impl Brain {
         self.thinks = s.thinks;
         self.stage = s.stage;
         self.goal = s.goal;
-        self.vitals.energy = s.energy;
+        self.vitals.pressure = s.pressure;
+        self.vitals.ticks_awake = s.ticks_awake;
+        self.vitals.enc_threshold = s.enc_threshold;
         self.vitals.curiosity = s.curiosity;
         self.vitals.age_ticks = s.age_ticks;
         self.rng.set_state(s.rng_state);
@@ -554,24 +582,31 @@ impl Mind for Brain {
         // 7. Learning-side effects (skipped during pure-inference eval).
         if learn {
             self.semantic.learn(&query);
-            let cost = self.cfg.vitals.energy_cost_base
-                + self.cfg.vitals.energy_cost_per_agent * active.len() as f32;
-            self.vitals.spend(cost);
-            self.hippocampus.record(Episode {
-                tick: self.vitals.age_ticks,
-                stage: self.stage.clone(),
-                query,
-                dominant: CONCEPTS[dom].to_string(),
-                decision: decision.action.clone(),
-                active_agents: active.clone(),
-                reward: 0.0,
-                surprise,
-                priority: 1.0,
-            });
+            self.vitals.tick();
+            self.vitals.accumulate(self.cfg.vitals.time_fatigue);
+            // Encoding gate: store only experience surprising enough to matter. The
+            // threshold rises with maturity, so a familiar world is mostly let pass
+            // unencoded — and unencoded experience builds no reconciliation pressure.
+            let encode = surprise > self.vitals.enc_threshold;
+            if encode {
+                self.vitals.accumulate(self.cfg.vitals.surprise_weight * surprise);
+                self.hippocampus.record(Episode {
+                    tick: self.vitals.age_ticks,
+                    stage: self.stage.clone(),
+                    query,
+                    dominant: CONCEPTS[dom].to_string(),
+                    decision: decision.action.clone(),
+                    active_agents: active.clone(),
+                    reward: 0.0,
+                    surprise,
+                    priority: 1.0,
+                });
+            }
             self.pending = Some(Pending {
                 winners: decision.winners.clone(),
                 active,
                 surprise,
+                encoded: encode,
             });
         }
 
@@ -580,14 +615,17 @@ impl Mind for Brain {
     }
 
     fn reward(&mut self, r: f32) {
-        if let Some(ep) = self.hippocampus.buf.last_mut() {
-            ep.reward = r;
-        }
         self.recent_rewards.push(r);
         if self.recent_rewards.len() > 512 {
             self.recent_rewards.remove(0);
         }
         if let Some(p) = self.pending.take() {
+            // Attach the reward only if this tick was actually encoded.
+            if p.encoded {
+                if let Some(ep) = self.hippocampus.buf.last_mut() {
+                    ep.reward = r;
+                }
+            }
             self.vitals.feel(
                 r,
                 p.surprise,
@@ -599,7 +637,7 @@ impl Mind for Brain {
     }
 
     fn tired(&self) -> bool {
-        self.vitals.energy < self.cfg.vitals.tired_threshold
+        self.vitals.pressure > self.cfg.vitals.pressure_capacity
     }
 
     fn sleep(&mut self) -> DreamLog {
@@ -736,7 +774,8 @@ impl Mind for Brain {
         let day_episodes = rn as usize;
         self.day_start_tick = now;
 
-        self.vitals.rest();
+        self.vitals
+            .reconcile(self.cfg.vitals.target_day, self.cfg.vitals.difficulty_gain);
         self.sleeps += 1;
         let strengthened = self.cortex.top_edges(5);
         DreamLog {
@@ -763,7 +802,8 @@ impl Mind for Brain {
             tick: self.vitals.age_ticks,
             day: self.sleeps,
             stage: self.stage.clone(),
-            energy: self.vitals.energy,
+            energy: (1.0 - self.vitals.pressure / self.cfg.vitals.pressure_capacity.max(0.001))
+                .clamp(0.0, 1.0),
             curiosity: self.vitals.curiosity,
             agents_total: self.cortex.len(),
             gpu_count: self.cortex.count_tier(Placement::Gpu),
