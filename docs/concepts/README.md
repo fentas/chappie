@@ -15,6 +15,7 @@ these capture the intent the code is reaching for.
 6. [Development](06-development.md) — the life-cycle, embryo → real senses, the examined life.
 7. [Open Questions](07-open-questions.md) — the philosophical debates we haven't settled.
 8. [Valence & Drives](08-valence-and-drives.md) — good/bad as a learned curve; sleep as buffer reconciliation (Bitcoin-difficulty rhythm); boredom → creativity; reality-monitoring. *(supersedes the reward/energy sketches)*
+9. [Growth & Pruning](09-growth-and-pruning.md) — grow agents/connections when needed (neurogenesis), cull the unused (pruning); the limit⇄grow dial.
 
 ## Reading guide
 
