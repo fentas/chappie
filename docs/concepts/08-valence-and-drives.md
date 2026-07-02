@@ -11,18 +11,35 @@ pleasure* of prediction-error you expect to reduce; surprise is aversive only wh
 threatening or overwhelming. Novelty follows an inverted-U (a Wundt curve) whose shape is
 learned. So valence is **grown, not declared.**
 
-Three sources, combined by weights that are themselves a **learned, context-based curve**
-(shifting over development):
-- **Signal-fluency** — regularity, harmony, rhythm, familiarity of the raw input.
-  *Early-dominant:* before references exist, "safe/good" = a consonant, predictable,
-  familiar pattern (a voice, a song, a known place, even consistent white noise). Mere
-  exposure / processing fluency.
-- **Epistemic** — context-dependent value of surprise: resolvable-or-safe surprise is
-  *sought*; unresolvable-and-threatening surprise is aversive. Not a fixed sign.
-- **Extrinsic** — reward / feedback (a world oracle today; social or learned reward later).
+**Harmony is the through-line.** The core positive is *harmony*, at two levels that are
+really one:
+- **Signal-harmony** — a consonant, regular, familiar *input* (a voice, a song, a known
+  place, even consistent white noise). Early-dominant, before references exist. Chaos and
+  dissonance are negative. (Mere exposure / processing fluency.)
+- **Relational-harmony** — a *response to me that mirrors/matches*: contingency,
+  turn-taking, attunement. **This is what "extrinsic validation" actually is — and it is
+  dense, not sparse.** A caregiver mirroring a laugh, "ei-ei-ei" back-and-forth → positive;
+  chaotic voices, or a non-contingent **still-face**, → negative (distress within seconds,
+  per Tronick).
 
-The **weighting** of these is intrinsic-vs-extrinsic balance, learned and context-based —
-signal → epistemic → learned-extrinsic as the brain matures.
+Riding alongside:
+- **Epistemic** — resolvable/safe surprise is *sought* (curiosity); not a fixed sign.
+
+And **state modulates all of it** — **co-regulation**: harmonic input is worth *more* when
+the agent is distressed (a familiar voice soothing a screaming baby). Value scales with
+need (allostasis / affect regulation).
+
+The **weighting** is learned and context-based, shifting signal → relational/epistemic →
+learned over development.
+
+## The world must be a responder, not an answer-key
+This is the architectural consequence, and the earlier "extrinsic looks sparse" claim was
+wrong: extrinsic valence looked sparse only because the embryo `Sandbox` *graded a label*.
+Real validation is the **harmony and contingency of the world's response** to what the agent
+did. So the world **responds**: it **mirrors** fitting actions (harmony → positive), answers
+dissonantly to unfitting ones, and occasionally goes **still-face** (non-contingent →
+distress). Once the world responds, extrinsic valence is dense and textured — even with stub
+agents — and developmentally true: an infant gets social-harmonic feedback, not a test score.
 
 ## Sleep is buffer reconciliation, not fuel
 We do **not** model a metabolic-energy economy (that becomes real only with a battery as a
