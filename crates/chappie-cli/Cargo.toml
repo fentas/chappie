@@ -1,0 +1,22 @@
+[package]
+name = "chappie-cli"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "chappie"
+path = "src/main.rs"
+
+[dependencies]
+chappie-core = { path = "../chappie-core" }
+chappie-harness = { path = "../chappie-harness" }
+chappie-brain = { path = "../chappie-brain" }
+chappie-world = { path = "../chappie-world" }
+chappie-examiner = { path = "../chappie-examiner" }
+chappie-burn = { path = "../chappie-burn", optional = true }
+
+[features]
+# Opt-in: adds the Burn-backed neural agent (long-term parametric memory) to the
+# population. Off by default so the pure-std build stays fast.
+burn = ["dep:chappie-burn"]

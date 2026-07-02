@@ -1,0 +1,45 @@
+# Chappie — project environment, managed by mise.
+#
+# System Rust (Arch 1.95.0) is used by default. To let mise own the toolchain
+# for reproducibility, uncomment [tools] and run `mise install`.
+# [tools]
+# rust = "1.95"
+
+[env]
+RUST_BACKTRACE = "1"
+
+# --- Model backend (used from stage 2 onward; the v1 skeleton needs none) ---
+OLLAMA_HOST = "127.0.0.1:11434"
+# The RX 9070 XT is RDNA4 (gfx1201). Some ROCm libraries don't ship gfx1201
+# kernels yet; uncomment if a backend refuses the card (Ollama usually copes).
+# HSA_OVERRIDE_GFX_VERSION = "11.0.0"
+
+[tasks.build]
+description = "Compile the whole workspace"
+run = "cargo build"
+
+[tasks.life]
+description = "Run one deterministic Chappie life"
+run = "cargo run --release --bin chappie -- --seed 42 --ticks 4000"
+
+[tasks.life-burn]
+description = "Run a Chappie life with the Burn neural agent (long-term parametric memory)"
+run = "cargo run -p chappie-cli --features burn -- --seed 42 --ticks 4000"
+
+[tasks.bench]
+description = "Run a benchmark and append it (git-hash tagged) to benchmarks/history.tsv"
+run = "bash scripts/bench.sh --seed 42 --ticks 4000"
+
+[tasks.run]
+description = "Run Chappie (append args after --)"
+run = "cargo run --bin chappie --"
+
+[tasks.test]
+description = "Run tests"
+run = "cargo test"
+
+[tasks.fmt]
+run = "cargo fmt"
+
+[tasks.clippy]
+run = "cargo clippy --all-targets"

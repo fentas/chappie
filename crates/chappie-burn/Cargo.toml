@@ -1,0 +1,11 @@
+[package]
+name = "chappie-burn"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+burn = { version = "0.21.0", features = ["wgpu", "autodiff", "ndarray"] }
+chappie-core = { path = "../chappie-core" }
+chappie-harness = { path = "../chappie-harness" }
+# burn added via `cargo add` below (wgpu/Vulkan GPU + ndarray CPU tier + autodiff)

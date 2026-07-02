@@ -1,0 +1,8 @@
+[package]
+name = "chappie-world"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+chappie-core = { path = "../chappie-core" }

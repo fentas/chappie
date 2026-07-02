@@ -1,0 +1,9 @@
+[package]
+name = "chappie-brain"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+chappie-core = { path = "../chappie-core" }
+chappie-harness = { path = "../chappie-harness" }

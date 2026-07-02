@@ -1,0 +1,3 @@
+# Chappie benchmark history — one row per run, appended by scripts/bench.sh (mise run bench).
+# Each RESULT carries git=<short-hash>, so benchmark movements correlate to commits.
+# columns: <utc-timestamp>\tRESULT git=.. build=.. seed=.. ticks=.. bench_final=.. bench_auc=.. reward=.. ...

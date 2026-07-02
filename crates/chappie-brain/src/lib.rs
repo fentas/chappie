@@ -1,0 +1,403 @@
+//! chappie-brain — the regions, wired into one global-workspace cognitive loop.
+//!
+//! ```text
+//! perceive → attend → schedule (place agents GPU/CPU/cold) → deliberate
+//!          → consensus → act → record episode → [tired?] sleep→consolidate
+//! ```
+//!
+//! Every knob comes from [`Config`]; every region is a small struct behind a
+//! clean seam. Swap `Senses` for real encoders, swap `StubAgent`s in the
+//! `Cortex` for Burn/Ollama models, and this loop is unchanged.
+
+use chappie_core::*;
+use chappie_harness::{Agent, Harness};
+
+// ============================================================================
+// Senses — encode raw stimuli into percepts and assign salience.
+// ============================================================================
+
+struct Senses;
+
+impl Senses {
+    fn encode(&self, stim: &Stimulus, semantic: &Semantic) -> Percept {
+        let emb = stim.features.clone();
+        let novelty = semantic.novelty(&emb);
+        let danger = emb[concept_index("danger").unwrap()].max(0.0);
+        // Salience rises with intensity, novelty, and threat — right-brain vigilance.
+        let salience = (0.4 * stim.intensity + 0.4 * novelty + 0.4 * danger).min(1.0);
+        Percept {
+            modality: stim.modality,
+            label: stim.label.clone(),
+            embedding: emb,
+            salience,
+        }
+    }
+}
+
+// ============================================================================
+// Thalamus — attention gate, multimodal fusion, hemisphere arbitration.
+// ============================================================================
+
+struct Thalamus;
+
+impl Thalamus {
+    fn gate(&self, percepts: Vec<Percept>, floor: f32) -> Vec<Percept> {
+        percepts.into_iter().filter(|p| p.salience >= floor).collect()
+    }
+
+    /// Salience-weighted fusion into one query embedding + its dominant concept.
+    fn fuse(&self, percepts: &[Percept]) -> (Embedding, usize) {
+        let mut q = vec![0.0f32; EMB_DIM];
+        let mut tot = 0.0f32;
+        for p in percepts {
+            for i in 0..EMB_DIM {
+                q[i] += p.embedding[i] * p.salience;
+            }
+            tot += p.salience;
+        }
+        if tot > 0.0 {
+            for x in q.iter_mut() {
+                *x /= tot;
+            }
+        }
+        let dom = argmax(&q);
+        normalize(&mut q);
+        (q, dom)
+    }
+
+    /// The corpus-callosum call: novelty/curiosity hands the lead to the right
+    /// (explore) hemisphere; the familiar stays with the left (exploit).
+    fn lead(&self, surprise: f32, curiosity: f32, threshold: f32) -> Hemisphere {
+        if surprise + curiosity > threshold {
+            Hemisphere::Right
+        } else {
+            Hemisphere::Left
+        }
+    }
+}
+
+// ============================================================================
+// Semantic memory — prototypes that let the brain measure surprise.
+// ============================================================================
+
+struct Semantic {
+    protos: Vec<Embedding>,
+}
+
+impl Semantic {
+    fn novelty(&self, e: &[f32]) -> f32 {
+        if self.protos.is_empty() {
+            return 1.0;
+        }
+        let best = self.protos.iter().map(|p| cosine(p, e)).fold(f32::MIN, f32::max);
+        (1.0 - best).clamp(0.0, 1.0)
+    }
+
+    fn learn(&mut self, e: &Embedding) -> bool {
+        let mut bi = usize::MAX;
+        let mut bs = f32::MIN;
+        for (i, p) in self.protos.iter().enumerate() {
+            let s = cosine(p, e);
+            if s > bs {
+                bs = s;
+                bi = i;
+            }
+        }
+        if bs > 0.85 && bi != usize::MAX {
+            for i in 0..EMB_DIM {
+                self.protos[bi][i] = 0.9 * self.protos[bi][i] + 0.1 * e[i];
+            }
+            normalize(&mut self.protos[bi]);
+            false
+        } else if self.protos.len() < 64 {
+            self.protos.push(e.clone());
+            true
+        } else {
+            false
+        }
+    }
+}
+
+// ============================================================================
+// Hippocampus — the rolling episodic buffer sleep replays.
+// ============================================================================
+
+struct Hippocampus {
+    buf: Vec<Episode>,
+    cap: usize,
+}
+
+impl Hippocampus {
+    fn record(&mut self, e: Episode) {
+        if self.buf.len() >= self.cap {
+            self.buf.remove(0);
+        }
+        self.buf.push(e);
+    }
+}
+
+// ============================================================================
+// Vitals — homeostatic drives that shape a life.
+// ============================================================================
+
+struct Vitals {
+    energy: f32,
+    curiosity: f32,
+    age_ticks: u64,
+}
+
+impl Vitals {
+    fn spend(&mut self, cost: f32) {
+        self.energy = (self.energy - cost).max(0.0);
+        self.age_ticks += 1;
+    }
+    fn rest(&mut self) {
+        self.energy = 1.0;
+    }
+    fn feel(&mut self, reward: f32, surprise: f32, gain: f32, decay: f32) {
+        self.curiosity = (self.curiosity + gain * surprise - decay * reward.max(0.0)).clamp(0.0, 1.0);
+    }
+}
+
+// ============================================================================
+// Trace — a peek at one tick, for the CLI narration.
+// ============================================================================
+
+#[derive(Clone, Debug, Default)]
+pub struct Trace {
+    pub tick: u64,
+    pub dominant: String,
+    pub lead: &'static str,
+    pub surprise: f32,
+    pub salient: Vec<(String, f32)>,
+    pub active: Vec<(String, &'static str)>, // (name, tier)
+    pub proposals: Vec<(String, String, String, f32)>, // agent, kind, utterance, weight
+    pub decision: String,
+    pub agreement: f32,
+}
+
+struct Pending {
+    winners: Vec<AgentId>,
+    active: Vec<AgentId>,
+    surprise: f32,
+}
+
+// ============================================================================
+// Brain — the whole thing.
+// ============================================================================
+
+pub struct Brain {
+    senses: Senses,
+    thalamus: Thalamus,
+    cortex: Harness,
+    hippocampus: Hippocampus,
+    semantic: Semantic,
+    vitals: Vitals,
+    rng: Rng,
+    cfg: Config,
+    stage: String,
+    recent_rewards: Vec<f32>,
+    sleeps: u64,
+    pending: Option<Pending>,
+    last_trace: Trace,
+}
+
+impl Brain {
+    pub fn new(agents: Vec<Box<dyn Agent>>, cfg: Config) -> Self {
+        let cortex = Harness::new(agents, &cfg);
+        let rng = Rng::new(cfg.seed);
+        let cap = cfg.sleep.replay_cap.max(1);
+        Brain {
+            senses: Senses,
+            thalamus: Thalamus,
+            cortex,
+            hippocampus: Hippocampus { buf: Vec::new(), cap },
+            semantic: Semantic { protos: Vec::new() },
+            vitals: Vitals { energy: 1.0, curiosity: 0.3, age_ticks: 0 },
+            rng,
+            cfg,
+            stage: "infancy".to_string(),
+            recent_rewards: Vec::new(),
+            sleeps: 0,
+            pending: None,
+            last_trace: Trace::default(),
+        }
+    }
+
+    pub fn set_stage(&mut self, stage: &str) {
+        self.stage = stage.to_string();
+    }
+
+    pub fn trace(&self) -> Trace {
+        self.last_trace.clone()
+    }
+
+    pub fn cortex(&self) -> &Harness {
+        &self.cortex
+    }
+}
+
+impl Mind for Brain {
+    fn perceive_act(&mut self, stimuli: &[Stimulus], learn: bool) -> Action {
+        // 1. Senses → percepts.
+        let percepts: Vec<Percept> = stimuli
+            .iter()
+            .map(|s| self.senses.encode(s, &self.semantic))
+            .collect();
+
+        // 2. Attention gate.
+        let gated = self.thalamus.gate(percepts, self.cfg.attention.floor);
+        if gated.is_empty() {
+            self.cortex.end_tick();
+            return Action::noop();
+        }
+
+        // 3. Fuse → query + dominant; surprise; hemisphere lead.
+        let (query, dom) = self.thalamus.fuse(&gated);
+        let surprise = self.semantic.novelty(&query);
+        let lead = self.thalamus.lead(surprise, self.vitals.curiosity, self.cfg.hemisphere.novelty_threshold);
+
+        // 4. Schedule: rank by priority, place agents on GPU/CPU/cold.
+        let active = self.cortex.schedule(&query, &mut self.rng);
+
+        // 5. Deliberate → consensus.
+        let proposals = self
+            .cortex
+            .deliberate(&query, dom, lead, self.vitals.curiosity, &mut self.rng);
+        let decision = self.cortex.consensus(&proposals);
+
+        // 6. Trace.
+        self.last_trace = Trace {
+            tick: self.vitals.age_ticks,
+            dominant: CONCEPTS[dom].to_string(),
+            lead: if lead == Hemisphere::Left { "L" } else { "R" },
+            surprise,
+            salient: gated.iter().map(|p| (p.label.clone(), p.salience)).collect(),
+            active: active
+                .iter()
+                .map(|&id| (self.cortex.name(id).to_string(), self.cortex.placement_of(id).tag()))
+                .collect(),
+            proposals: proposals
+                .iter()
+                .map(|p| {
+                    (
+                        p.agent_name.clone(),
+                        p.action.kind.name().to_string(),
+                        p.action.utterance.clone(),
+                        p.weight,
+                    )
+                })
+                .collect(),
+            decision: format!(
+                "{}{}",
+                decision.action.kind.name(),
+                if decision.action.utterance.is_empty() {
+                    String::new()
+                } else {
+                    format!(" \"{}\"", decision.action.utterance)
+                }
+            ),
+            agreement: decision.agreement,
+        };
+
+        // 7. Learning-side effects (skipped during pure-inference eval).
+        if learn {
+            self.semantic.learn(&query);
+            let cost = self.cfg.vitals.energy_cost_base
+                + self.cfg.vitals.energy_cost_per_agent * active.len() as f32;
+            self.vitals.spend(cost);
+            self.hippocampus.record(Episode {
+                tick: self.vitals.age_ticks,
+                stage: self.stage.clone(),
+                query,
+                dominant: CONCEPTS[dom].to_string(),
+                decision: decision.action.clone(),
+                active_agents: active.clone(),
+                reward: 0.0,
+                surprise,
+            });
+            self.pending = Some(Pending {
+                winners: decision.winners.clone(),
+                active,
+                surprise,
+            });
+        }
+
+        self.cortex.end_tick();
+        decision.action
+    }
+
+    fn reward(&mut self, r: f32) {
+        if let Some(ep) = self.hippocampus.buf.last_mut() {
+            ep.reward = r;
+        }
+        self.recent_rewards.push(r);
+        if self.recent_rewards.len() > 512 {
+            self.recent_rewards.remove(0);
+        }
+        if let Some(p) = self.pending.take() {
+            self.vitals.feel(
+                r,
+                p.surprise,
+                self.cfg.vitals.curiosity_gain,
+                self.cfg.vitals.curiosity_reward_decay,
+            );
+            self.cortex.reinforce(&p.winners, &p.active, r);
+        }
+    }
+
+    fn tired(&self) -> bool {
+        self.vitals.energy < self.cfg.vitals.tired_threshold
+    }
+
+    fn sleep(&mut self) -> DreamLog {
+        let episodes = self.hippocampus.buf.clone();
+        self.cortex.consolidate(&episodes, &mut self.rng);
+
+        let mut new_protos = 0usize;
+        for e in &episodes {
+            if e.reward > 0.0 && self.semantic.learn(&e.query) {
+                new_protos += 1;
+            }
+        }
+
+        self.vitals.rest();
+        self.sleeps += 1;
+        let strengthened = self.cortex.top_edges(5);
+        DreamLog {
+            day: self.sleeps,
+            replayed: episodes.len(),
+            strengthened,
+            new_prototypes: new_protos,
+            note: format!("consolidated {} episodes", episodes.len()),
+        }
+    }
+
+    fn stats(&self) -> MindStats {
+        let avg = if self.recent_rewards.is_empty() {
+            0.0
+        } else {
+            self.recent_rewards.iter().sum::<f32>() / self.recent_rewards.len() as f32
+        };
+        MindStats {
+            tick: self.vitals.age_ticks,
+            day: self.sleeps,
+            stage: self.stage.clone(),
+            energy: self.vitals.energy,
+            curiosity: self.vitals.curiosity,
+            agents_total: self.cortex.len(),
+            gpu_count: self.cortex.count_tier(Placement::Gpu),
+            cpu_count: self.cortex.count_tier(Placement::Cpu),
+            cold_count: self.cortex.count_tier(Placement::Cold),
+            gpu_mb: self.cortex.gpu_mb(),
+            cpu_mb: self.cortex.cpu_mb(),
+            peak_gpu_mb: self.cortex.peak_gpu_mb(),
+            peak_cpu_mb: self.cortex.peak_cpu_mb(),
+            gpu_budget: self.cortex.gpu_budget(),
+            cpu_budget: self.cortex.cpu_budget(),
+            total_mb: self.cortex.total_mb(),
+            sleeps: self.sleeps,
+            avg_reward: avg,
+        }
+    }
+}

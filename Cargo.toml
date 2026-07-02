@@ -1,0 +1,28 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/chappie-core",
+    "crates/chappie-harness",
+    "crates/chappie-brain",
+    "crates/chappie-world",
+    "crates/chappie-examiner",
+    "crates/chappie-cli",
+    "crates/chappie-burn",
+]
+# Keep the default build pure-std and fast: Burn (heavy) only builds when asked
+# for explicitly (`-p chappie-burn` or the CLI's `--features burn`).
+default-members = ["crates/chappie-cli"]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+license = "MIT"
+repository = "https://github.com/fentas/chappie"
+
+# v1 is pure std on purpose: fast compiles, no supply-chain surface, and every
+# region is a trait you can back with a real model later (Ollama/candle/LoRA).
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
