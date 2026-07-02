@@ -3,6 +3,9 @@
 .DS_Store
 /models
 *.gguf
+/diary
+/tasks
+/state
 .claude/scheduled_tasks.lock
 # Cargo.lock is committed on purpose: reproducible builds per commit, so a
 # benchmark can be reproduced from the exact commit it was recorded against.

@@ -30,6 +30,10 @@ run = "cargo run -p chappie-cli --features burn -- --seed 42 --ticks 4000"
 description = "Run a benchmark and append it (git-hash tagged) to benchmarks/history.tsv"
 run = "bash scripts/bench.sh --seed 42 --ticks 4000"
 
+[tasks.live]
+description = "Live endlessly — keep a diary in diary/, take tasks from tasks/inbox/"
+run = "cargo run --release --bin chappie -- --endless"
+
 [tasks.run]
 description = "Run Chappie (append args after --)"
 run = "cargo run --bin chappie --"

@@ -95,6 +95,7 @@ pub struct Sandbox {
     expected_concept: String,
     expected_kind: ActionKind,
     since_advance: u64,
+    focus: Option<String>,
 }
 
 impl Sandbox {
@@ -104,11 +105,17 @@ impl Sandbox {
             expected_concept: "visual".to_string(),
             expected_kind: ActionKind::Speak,
             since_advance: 0,
+            focus: None,
         }
     }
 
     pub fn life_stage(&self) -> LifeStage {
         self.stage
+    }
+
+    /// Bias what the world presents toward a concept (a task's focus), or clear it.
+    pub fn set_focus(&mut self, concept: Option<String>) {
+        self.focus = concept;
     }
 }
 
@@ -121,8 +128,14 @@ impl Default for Sandbox {
 impl World for Sandbox {
     fn observe(&mut self, rng: &mut Rng) -> Vec<Stimulus> {
         let palette = self.stage.palette();
-        let dom = palette[rng.next_range(palette.len())];
-        self.expected_concept = dom.to_string();
+        // With a task focus, present that concept ~half the time (when the stage
+        // offers it); otherwise pick uniformly from the stage's palette.
+        let dom_name: String = match &self.focus {
+            Some(f) if rng.next_f32() < 0.5 && palette.contains(&f.as_str()) => f.clone(),
+            _ => palette[rng.next_range(palette.len())].to_string(),
+        };
+        let dom = dom_name.as_str();
+        self.expected_concept = dom_name.clone();
         self.expected_kind = expected_kind(dom);
 
         let mut stimuli = Vec::new();

@@ -247,6 +247,8 @@ pub struct Brain {
     recent_rewards: Vec<f32>,
     sleeps: u64,
     thinks: u64,
+    day_start_tick: u64,
+    goal: Option<String>,
     pending: Option<Pending>,
     last_trace: Trace,
 }
@@ -270,6 +272,8 @@ impl Brain {
             recent_rewards: Vec::new(),
             sleeps: 0,
             thinks: 0,
+            day_start_tick: 0,
+            goal: None,
             pending: None,
             last_trace: Trace::default(),
         }
@@ -277,6 +281,12 @@ impl Brain {
 
     pub fn set_stage(&mut self, stage: &str) {
         self.stage = stage.to_string();
+    }
+
+    /// Give (or clear) the current goal/task — recorded in the diary and used to
+    /// bias what the world presents.
+    pub fn set_goal(&mut self, goal: Option<String>) {
+        self.goal = goal;
     }
 
     pub fn trace(&self) -> Trace {
@@ -451,6 +461,29 @@ impl Mind for Brain {
             }
         }
 
+        // Summarize the day just ended (episodes since the previous sleep).
+        let now = self.vitals.age_ticks;
+        let mut counts = [0u32; EMB_DIM];
+        let mut rsum = 0.0f32;
+        let mut rn = 0u32;
+        for e in episodes.iter().filter(|e| e.tick >= self.day_start_tick) {
+            if let Some(c) = concept_index(&e.dominant) {
+                counts[c] += 1;
+            }
+            rsum += e.reward;
+            rn += 1;
+        }
+        let mut concept_counts: Vec<(String, u32)> = CONCEPTS
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| counts[*i] > 0)
+            .map(|(i, &name)| (name.to_string(), counts[i]))
+            .collect();
+        concept_counts.sort_by(|a, b| b.1.cmp(&a.1));
+        let day_reward = if rn > 0 { rsum / rn as f32 } else { 0.0 };
+        let day_episodes = rn as usize;
+        self.day_start_tick = now;
+
         self.vitals.rest();
         self.sleeps += 1;
         let strengthened = self.cortex.top_edges(5);
@@ -459,7 +492,10 @@ impl Mind for Brain {
             replayed: episodes.len(),
             strengthened,
             new_prototypes: new_protos,
-            note: format!("consolidated {} episodes", episodes.len()),
+            note: format!("consolidated {} episodes ({} today)", episodes.len(), day_episodes),
+            day_reward,
+            concept_counts,
+            goal: self.goal.clone(),
         }
     }
 

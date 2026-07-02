@@ -17,6 +17,7 @@ const SPARK: [&str; 9] = [" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", 
 
 fn main() {
     let cfg = build_config();
+    let opts = RunOpts::from_args();
 
     println!("┌─────────────────────────────────────────────────────────────────────┐");
     println!("│  Chappie — one life                                                   │");
@@ -30,6 +31,11 @@ fn main() {
     let mut world = Sandbox::new();
     let mut exam = Examiner::standard();
     let mut wrng = Rng::new(cfg.seed ^ 0xABCD_1234);
+
+    if opts.endless {
+        run_endless(&cfg, &mut brain, &mut world, &mut exam, &mut wrng, &opts);
+        return;
+    }
 
     #[cfg(feature = "burn")]
     let neo_id = brain.cortex().id_of("Neocortex");
@@ -137,6 +143,8 @@ fn build_config() -> Config {
                 }
                 i += 2;
             }
+            "--endless" => i += 1,
+            "--days" | "--diary-dir" | "--task-dir" => i += 2,
             other => {
                 eprintln!("warning: ignoring unknown arg '{other}'");
                 i += 1;
@@ -418,6 +426,184 @@ fn git_hash() -> String {
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "nogit".to_string())
+}
+
+// ============================================================================
+// Endless mode — live forever, keep a diary, take tasks from an inbox.
+// ============================================================================
+
+struct RunOpts {
+    endless: bool,
+    max_days: Option<u64>,
+    diary_dir: String,
+    task_dir: String,
+}
+
+impl RunOpts {
+    fn from_args() -> Self {
+        let mut o = RunOpts {
+            endless: false,
+            max_days: None,
+            diary_dir: "diary".into(),
+            task_dir: "tasks".into(),
+        };
+        let args: Vec<String> = std::env::args().collect();
+        let mut i = 1;
+        while i < args.len() {
+            match args[i].as_str() {
+                "--endless" => {
+                    o.endless = true;
+                    i += 1;
+                }
+                "--days" => {
+                    o.max_days = args.get(i + 1).and_then(|s| s.parse().ok());
+                    i += 2;
+                }
+                "--diary-dir" => {
+                    if let Some(v) = args.get(i + 1) {
+                        o.diary_dir = v.clone();
+                    }
+                    i += 2;
+                }
+                "--task-dir" => {
+                    if let Some(v) = args.get(i + 1) {
+                        o.task_dir = v.clone();
+                    }
+                    i += 2;
+                }
+                _ => i += 1,
+            }
+        }
+        o
+    }
+}
+
+fn run_endless(
+    _cfg: &Config,
+    brain: &mut Brain,
+    world: &mut Sandbox,
+    exam: &mut Examiner,
+    wrng: &mut Rng,
+    opts: &RunOpts,
+) {
+    let inbox = format!("{}/inbox", opts.task_dir);
+    let done = format!("{}/done", opts.task_dir);
+    std::fs::create_dir_all(&inbox).ok();
+    std::fs::create_dir_all(&done).ok();
+    std::fs::create_dir_all(&opts.diary_dir).ok();
+    println!(
+        "\n── Chappie is living (endless) ─ diary: {}/ · drop tasks in {}/ · Ctrl-C to stop ──",
+        opts.diary_dir, inbox
+    );
+
+    let mut t: u64 = 0;
+    loop {
+        // Occasionally check the task inbox; a dropped file becomes the goal.
+        if t % 200 == 0 {
+            if let Some((name, text)) = poll_task(&inbox, &done) {
+                let focus = CONCEPTS
+                    .iter()
+                    .find(|&&c| text.to_lowercase().contains(c))
+                    .map(|&c| c.to_string());
+                world.set_focus(focus.clone());
+                brain.set_goal(Some(text.trim().to_string()));
+                println!(
+                    "  📥 task '{}': \"{}\"  → focus: {}",
+                    name,
+                    text.trim(),
+                    focus.as_deref().unwrap_or("(none)")
+                );
+            }
+        }
+
+        let stimuli = world.observe(wrng);
+        let action = brain.perceive_act(&stimuli, true);
+        let reward = world.step(&action, wrng);
+        brain.reward(reward);
+
+        if brain.tired() {
+            let dream = brain.sleep();
+            write_diary(&opts.diary_dir, &dream, &brain.stats());
+            println!(
+                "  💤 day {:>4} → diary  (reward {:+.2}, {} memories consolidated)",
+                dream.day, dream.day_reward, dream.replayed
+            );
+            if let Some(max) = opts.max_days {
+                if max > 0 && dream.day >= max {
+                    println!("  reached {max} days — stopping.");
+                    break;
+                }
+            }
+        }
+
+        if t > 0 && t % 500 == 0 {
+            let score = exam.examine(brain, t, world.stage());
+            world.advance(score);
+            brain.set_stage(world.stage());
+        }
+        t += 1;
+    }
+}
+
+fn poll_task(inbox: &str, done: &str) -> Option<(String, String)> {
+    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(inbox)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.is_file())
+        .collect();
+    files.sort();
+    let path = files.into_iter().next()?;
+    let text = std::fs::read_to_string(&path).unwrap_or_default();
+    let name = path.file_name()?.to_string_lossy().to_string();
+    let _ = std::fs::rename(&path, format!("{done}/{name}"));
+    Some((name, text))
+}
+
+fn mood(r: f32) -> &'static str {
+    if r > 0.7 {
+        "good"
+    } else if r > 0.3 {
+        "okay"
+    } else if r > -0.1 {
+        "mixed"
+    } else {
+        "hard"
+    }
+}
+
+fn write_diary(dir: &str, dream: &DreamLog, st: &MindStats) {
+    let mut s = String::new();
+    s += &format!("# Day {} — {}\n\n", dream.day, st.stage);
+    if let Some(g) = &dream.goal {
+        s += &format!("**Working on:** {g}\n\n");
+    }
+    s += &format!(
+        "Today felt {}. Reward {:+.2}; I consolidated {} memories in my sleep.\n\n",
+        mood(dream.day_reward),
+        dream.day_reward,
+        dream.replayed
+    );
+    if !dream.concept_counts.is_empty() {
+        s += "What I paid attention to:\n";
+        for (c, n) in dream.concept_counts.iter().take(6) {
+            s += &format!("- {c} ×{n}\n");
+        }
+        s += "\n";
+    }
+    if dream.new_prototypes > 0 {
+        s += &format!("I recognized {} new pattern(s).\n\n", dream.new_prototypes);
+    }
+    if let Some((a, b, w)) = dream.strengthened.first() {
+        s += &format!("My strongest association right now: **{a} ↔ {b}** ({w:.2}).\n\n");
+    }
+    s += &format!(
+        "_age {} ticks · escalated to thinking {} times · {} agents resident_\n",
+        st.tick,
+        st.thinks,
+        st.gpu_count + st.cpu_count
+    );
+    let _ = std::fs::write(format!("{dir}/day-{:04}.md", dream.day), s);
 }
 
 #[cfg(feature = "burn")]

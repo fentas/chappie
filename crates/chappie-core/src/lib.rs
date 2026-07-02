@@ -557,6 +557,12 @@ pub struct DreamLog {
     pub strengthened: Vec<(String, String, f32)>,
     pub new_prototypes: usize,
     pub note: String,
+    /// Mean reward over the day just ended (for the diary).
+    pub day_reward: f32,
+    /// What was attended to today: (concept, count), sorted desc.
+    pub concept_counts: Vec<(String, u32)>,
+    /// The goal/task in effect this day, if any.
+    pub goal: Option<String>,
 }
 
 /// A cognitive agent the environment can drive. Implemented by `chappie-brain`.
