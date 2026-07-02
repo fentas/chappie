@@ -16,6 +16,7 @@ these capture the intent the code is reaching for.
 7. [Open Questions](07-open-questions.md) — the philosophical debates we haven't settled.
 8. [Valence & Drives](08-valence-and-drives.md) — good/bad as a learned curve; sleep as buffer reconciliation (Bitcoin-difficulty rhythm); boredom → creativity; reality-monitoring. *(supersedes the reward/energy sketches)*
 9. [Growth & Pruning](09-growth-and-pruning.md) — grow agents/connections when needed (neurogenesis), cull the unused (pruning); the limit⇄grow dial.
+10. [Limits & Measurements](10-limits-and-measurements.md) — real numbers: loop scaling, where a tick goes, GPU transfer/compute, the actual envelope. *(measured, not spec)*
 
 ## Reading guide
 
