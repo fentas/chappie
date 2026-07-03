@@ -65,6 +65,33 @@ gates trained on two life-histories are two characters over the same experts. Th
 bakes one character in at training; the committee's is plastic and keeps developing. That is
 the whole "bigger out of the box, but the committee over time" bet, made mechanical.
 
+## In the living brain — built, and it grows a character
+The experiment above is offline. In the living brain the gate is now the **actual router**:
+before every `schedule()`, `focus = W·[mood, curiosity, boredom]` biases which agents are
+trusted — *additive* to the fixed cosine-relevance, so it **colours, never overrides** — and it
+trains online from felt valence toward whom it trusted. It's persisted in the snapshot, so a
+character survives sleep and resume.
+
+It's a **safe augmentation** (benchmarks unmoved: auc 0.965 vs 0.967 with it off; recall 1.000),
+and the payoff is the thing the bet predicted: **different lives grow different characters.** Same
+architecture, same agents, two seeds:
+
+| life | when distressed | when curious | when bored |
+|---|---|---|---|
+| seed 42 | → numeric | → language | → language |
+| seed 7 | **→ danger** | → language | → social |
+
+Seed 7 grew the *intuitive* temperament — **distressed → attend to danger** — purely from its own
+history; seed 42 grew a different one. Two life-histories, two characters over the same parts. The
+claim, made mechanical.
+
+Honest read: the gate is roughly benchmark-*neutral* here — it doesn't hurt, doesn't decisively
+help — because this world has weak mood-relevant structure (little *should* change with mood). It
+colours behaviour and forms a stable, persistent, per-life disposition; making that disposition
+genuinely *useful* needs a world where feeling and the right response are linked — the same lesson
+as the [gatekeeper](12-gatekeeper.md) (needed real danger) and thinking (needs hard problems).
+Config: `gate.{bias_weight, learn_rate}`.
+
 ## Honest scope
 - Toy task (9 concepts, tiny nets, `NdArray`/CPU) — this probes the *mechanism*.
 - The gate here routes on the percept; feeding it `mood`/arousal (the character step) is the

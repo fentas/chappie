@@ -315,6 +315,8 @@ pub struct MindStats {
     /// Deep memories held, and reflexes fired on the fast lane (gatekeeper).
     pub deep_memories: usize,
     pub reflexes: u64,
+    /// A human-readable note on the learned routing disposition (state → focus).
+    pub gate_note: String,
 }
 
 // ============================================================================
@@ -580,6 +582,21 @@ impl Default for GatekeeperCfg {
     }
 }
 
+/// The learned, mood-conditioned routing gate — the deliberative coordinator that
+/// develops into character (a state → who-to-trust map, learned from reward).
+#[derive(Clone, Debug)]
+pub struct GateCfg {
+    /// How much the learned focus biases routing (colours, doesn't override).
+    pub bias_weight: f32,
+    /// Delta-rule learning rate.
+    pub learn_rate: f32,
+}
+impl Default for GateCfg {
+    fn default() -> Self {
+        Self { bias_weight: 0.35, learn_rate: 0.03 }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Config {
     pub seed: u64,
@@ -595,6 +612,7 @@ pub struct Config {
     pub thinking: ThinkingCfg,
     pub growth: GrowthCfg,
     pub gatekeeper: GatekeeperCfg,
+    pub gate: GateCfg,
 }
 
 impl Default for Config {
@@ -613,6 +631,7 @@ impl Default for Config {
             thinking: ThinkingCfg::default(),
             growth: GrowthCfg::default(),
             gatekeeper: GatekeeperCfg::default(),
+            gate: GateCfg::default(),
         }
     }
 }
@@ -687,6 +706,8 @@ impl Config {
             "gatekeeper.slow_reps" => self.gatekeeper.slow_reps = pf!(),
             "gatekeeper.prime_boost" => self.gatekeeper.prime_boost = pf!(),
             "gatekeeper.decay" => self.gatekeeper.decay = pf!(),
+            "gate.bias_weight" => self.gate.bias_weight = pf!(),
+            "gate.learn_rate" => self.gate.learn_rate = pf!(),
             _ => return false,
         }
         true

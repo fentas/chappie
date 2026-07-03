@@ -259,6 +259,8 @@ struct Pending {
     episode: Episode,
     winners: Vec<AgentId>,
     perceptual_encode: bool,
+    /// The internal state that produced this tick's routing (for training the gate).
+    route_state: [f32; GATE_STATE],
 }
 
 // ============================================================================
@@ -289,6 +291,7 @@ pub struct Snapshot {
     pub recruited_concepts: Vec<usize>,
     pub recruited: u64,
     pub pruned: u64,
+    pub gate_w: Vec<f32>,
 }
 
 // ============================================================================
@@ -304,6 +307,48 @@ struct DeepMemory {
     valence: f32,
     strength: f32,
     hits: u32,
+}
+
+/// The learned, mood-conditioned routing gate: `focus = W · [mood, curiosity, boredom]`,
+/// learned from reward toward the winners' competency. This is the deliberative
+/// coordinator that develops into *character* — a state → who-to-trust map.
+const GATE_STATE: usize = 3;
+struct RoutingGate {
+    w: Vec<f32>, // EMB_DIM × GATE_STATE, row-major
+}
+impl RoutingGate {
+    fn new() -> Self {
+        Self { w: vec![0.0; EMB_DIM * GATE_STATE] }
+    }
+    fn focus(&self, state: &[f32; GATE_STATE]) -> Vec<f32> {
+        let mut f = vec![0.0f32; EMB_DIM];
+        for (c, fc) in f.iter_mut().enumerate() {
+            let mut acc = 0.0;
+            for k in 0..GATE_STATE {
+                acc += self.w[c * GATE_STATE + k] * state[k];
+            }
+            *fc = acc;
+        }
+        f
+    }
+    /// Delta rule: nudge the focus *direction* toward the winners' competency, scaled
+    /// by the felt valence — reward reinforces "in this state, trust these".
+    fn learn(&mut self, state: &[f32; GATE_STATE], target: &[f32], reward: f32, lr: f32) {
+        let mut f = self.focus(state);
+        normalize(&mut f);
+        let mut t = target.to_vec();
+        normalize(&mut t);
+        for c in 0..EMB_DIM {
+            let err = t[c] - f[c];
+            for k in 0..GATE_STATE {
+                let idx = c * GATE_STATE + k;
+                self.w[idx] = (self.w[idx] + lr * reward * err * state[k]).clamp(-1.5, 1.5);
+            }
+        }
+    }
+    fn trained(&self) -> bool {
+        self.w.iter().any(|&x| x.abs() > 1e-4)
+    }
 }
 
 pub struct Brain {
@@ -337,6 +382,8 @@ pub struct Brain {
     deep: Vec<DeepMemory>,
     reflex_count: Vec<u32>,
     reflexes: u64,
+    /// The learned, mood-conditioned routing gate — the coordinator that becomes character.
+    gate: RoutingGate,
     pending: Option<Pending>,
     last_trace: Trace,
 }
@@ -378,6 +425,7 @@ impl Brain {
             deep: Vec::new(),
             reflex_count: vec![0; EMB_DIM],
             reflexes: 0,
+            gate: RoutingGate::new(),
             pending: None,
             last_trace: Trace::default(),
         }
@@ -534,6 +582,7 @@ impl Brain {
             recruited_concepts: self.recruited_concepts.clone(),
             recruited: self.recruited,
             pruned: self.pruned,
+            gate_w: self.gate.w.clone(),
         }
     }
 
@@ -545,6 +594,9 @@ impl Brain {
         }
         self.recruited = s.recruited;
         self.pruned = s.pruned;
+        if s.gate_w.len() == self.gate.w.len() {
+            self.gate.w = s.gate_w.clone();
+        }
         self.sleeps = s.sleeps;
         self.day_start_tick = s.day_start_tick;
         self.thinks = s.thinks;
@@ -672,6 +724,7 @@ impl Mind for Brain {
                             episode,
                             winners: Vec::new(),
                             perceptual_encode: surprise > self.vitals.enc_threshold,
+                            route_state: [self.mood, self.vitals.curiosity, self.vitals.boredom],
                         });
                         self.cortex.end_tick();
                         return action;
@@ -680,6 +733,11 @@ impl Mind for Brain {
                 }
             }
         }
+
+        // Set the learned, mood-conditioned routing focus for this tick's schedule —
+        // the coordinator's disposition, given how the agent currently feels.
+        let route_state = [self.mood, self.vitals.curiosity, self.vitals.boredom];
+        self.cortex.set_gate_focus(self.gate.focus(&route_state));
 
         // 4. Schedule: rank by priority, place agents on GPU/CPU/cold.
         let mut active = self.cortex.schedule(&query, &mut self.rng);
@@ -789,6 +847,7 @@ impl Mind for Brain {
                 episode,
                 winners: decision.winners.clone(),
                 perceptual_encode,
+                route_state,
             });
         }
 
@@ -869,6 +928,15 @@ impl Mind for Brain {
             );
             // Learn from the *felt* valence (co-regulated + self-harmony), not raw reward.
             self.cortex.reinforce(&p.winners, &p.episode.active_agents, valence);
+
+            // Train the routing gate: in the state that produced this routing, nudge the
+            // focus toward whom it trusted, scaled by how it felt. Character forming — a
+            // learned state → who-to-trust map that develops over the life.
+            if !p.winners.is_empty() {
+                let target = self.cortex.competency_centroid(&p.winners);
+                self.gate
+                    .learn(&p.route_state, &target, valence, self.cfg.gate.learn_rate);
+            }
 
             if p.perceptual_encode || rpe > self.cfg.sleep.rpe_threshold {
                 p.episode.reward = valence;
@@ -1102,6 +1170,17 @@ impl Mind for Brain {
             pruned: self.pruned,
             deep_memories: self.deep.len(),
             reflexes: self.reflexes,
+            gate_note: if self.gate.trained() {
+                let top = |s: [f32; GATE_STATE]| CONCEPTS[argmax(&self.gate.focus(&s))];
+                format!(
+                    "distress→{} · curious→{} · bored→{}",
+                    top([-1.0, 0.0, 0.0]),
+                    top([0.2, 1.0, 0.0]),
+                    top([0.0, 0.0, 1.0])
+                )
+            } else {
+                "untrained".to_string()
+            },
         }
     }
 }

@@ -303,6 +303,8 @@ pub struct Harness {
     active: Vec<AgentId>,
     last_active: Vec<AgentId>,
     hot: Vec<AgentId>,
+    /// The learned, mood-conditioned routing focus (set by the brain each tick).
+    gate_focus: Vec<f32>,
 }
 
 impl Harness {
@@ -335,6 +337,7 @@ impl Harness {
             active: Vec::new(),
             last_active: Vec::new(),
             hot: Vec::new(),
+            gate_focus: vec![0.0; EMB_DIM],
         }
     }
 
@@ -344,6 +347,10 @@ impl Harness {
         let pc = self.cfg.priority.clone();
         let hot = self.hot.clone();
         let hot_denom = hot.len().max(1) as f32;
+        // The learned, mood-conditioned routing bias (zero focus → no effect).
+        let gate_w = self.cfg.gate.bias_weight;
+        let gate_focus = self.gate_focus.clone();
+        let gate_active = gate_focus.iter().any(|&x| x.abs() > 1e-6);
 
         // Pass 1 — priority for every agent (relevance + shared + reliability + hysteresis).
         let mut scored: Vec<(AgentId, f32)> = self
@@ -357,6 +364,9 @@ impl Harness {
                 let mut pri = pc.w_relevance * cosine(query, s.agent.competency());
                 pri += pc.w_shared * self.connectome.bias_for(a as usize, &hot) / hot_denom;
                 pri += pc.w_reliability * s.agent.reliability();
+                if gate_active {
+                    pri += gate_w * cosine(&gate_focus, s.agent.competency());
+                }
                 pri += match s.placement {
                     Placement::Gpu => pc.hysteresis,
                     Placement::Cpu => pc.hysteresis * 0.5,
@@ -643,6 +653,35 @@ impl Harness {
     }
     pub fn set_connectome_weights(&mut self, w: &[f32]) {
         self.connectome.set_weights(w);
+    }
+
+    /// Set the learned routing focus for the next `schedule` (the brain's gate output).
+    pub fn set_gate_focus(&mut self, focus: Vec<f32>) {
+        if focus.len() == EMB_DIM {
+            self.gate_focus = focus;
+        }
+    }
+
+    /// Mean competency of the given live agents — the target the routing gate learns toward.
+    pub fn competency_centroid(&self, ids: &[AgentId]) -> Vec<f32> {
+        let mut acc = vec![0.0f32; EMB_DIM];
+        let mut n = 0f32;
+        for &id in ids {
+            if let Some(s) = self.slots.get(id as usize) {
+                if !s.dead {
+                    for (a, &v) in acc.iter_mut().zip(s.agent.competency().iter()) {
+                        *a += v;
+                    }
+                    n += 1.0;
+                }
+            }
+        }
+        if n > 0.0 {
+            for a in acc.iter_mut() {
+                *a /= n;
+            }
+        }
+        acc
     }
 
     // ---- growth & pruning --------------------------------------------------

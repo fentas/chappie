@@ -330,6 +330,7 @@ fn final_report(brain: &Brain, exam: &Examiner, cfg: &Config) {
         "gatekeeper: {} deep memories · {} reflexes fired (fast lane)",
         st.deep_memories, st.reflexes
     );
+    println!("routing character (learned gate): {}", st.gate_note);
 
     let (first, last, best, auc) = if scores.is_empty() {
         (0.0, 0.0, 0.0, 0.0)
