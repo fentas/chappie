@@ -69,8 +69,18 @@ impl Rng {
 /// produce higher-dim opaque embeddings later; here the axes are human-readable
 /// so routing, specialization, and consensus are all inspectable in the logs.
 pub const CONCEPTS: [&str; 12] = [
-    "visual", "auditory", "tactile", "olfactory", "gustatory", "language", "spatial",
-    "logical", "numeric", "social", "danger", "reward",
+    "visual",
+    "auditory",
+    "tactile",
+    "olfactory",
+    "gustatory",
+    "language",
+    "spatial",
+    "logical",
+    "numeric",
+    "social",
+    "danger",
+    "reward",
 ];
 
 pub const EMB_DIM: usize = 12;
@@ -372,7 +382,12 @@ pub struct HemisphereCfg {
 }
 impl Default for HemisphereCfg {
     fn default() -> Self {
-        Self { lead_gain: 1.15, follow_gain: 0.9, curiosity_boost: 0.5, novelty_threshold: 0.6 }
+        Self {
+            lead_gain: 1.15,
+            follow_gain: 0.9,
+            curiosity_boost: 0.5,
+            novelty_threshold: 0.6,
+        }
     }
 }
 
@@ -416,7 +431,12 @@ pub struct HebbianCfg {
 }
 impl Default for HebbianCfg {
     fn default() -> Self {
-        Self { online_rate: 0.06, sleep_rate: 0.03, decay: 0.97, max_weight: 1.0 }
+        Self {
+            online_rate: 0.06,
+            sleep_rate: 0.03,
+            decay: 0.97,
+            max_weight: 1.0,
+        }
     }
 }
 
@@ -499,7 +519,11 @@ pub struct BudgetCfg {
 }
 impl Default for BudgetCfg {
     fn default() -> Self {
-        Self { gpu_mb: 600.0, cpu_mb: 1200.0, max_participants: 6 }
+        Self {
+            gpu_mb: 600.0,
+            cpu_mb: 1200.0,
+            max_participants: 6,
+        }
     }
 }
 
@@ -518,7 +542,12 @@ pub struct ThinkingCfg {
 }
 impl Default for ThinkingCfg {
     fn default() -> Self {
-        Self { agreement_threshold: 0.65, max_escalations: 2, widen_participants: 4, widen_floor_mult: 0.5 }
+        Self {
+            agreement_threshold: 0.65,
+            max_escalations: 2,
+            widen_participants: 4,
+            widen_floor_mult: 0.5,
+        }
     }
 }
 
@@ -593,7 +622,10 @@ pub struct GateCfg {
 }
 impl Default for GateCfg {
     fn default() -> Self {
-        Self { bias_weight: 0.35, learn_rate: 0.03 }
+        Self {
+            bias_weight: 0.35,
+            learn_rate: 0.03,
+        }
     }
 }
 

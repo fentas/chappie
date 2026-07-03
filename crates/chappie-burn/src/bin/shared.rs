@@ -13,7 +13,7 @@ use burn::nn::loss::CrossEntropyLossConfig;
 use burn::nn::{Linear, LinearConfig};
 use burn::optim::{AdamConfig, GradientsParams, Optimizer};
 use burn::tensor::backend::Backend;
-use burn::tensor::{activation, Int, Tensor, TensorData};
+use burn::tensor::{Int, Tensor, TensorData, activation};
 use chappie_core::*;
 use std::rc::Rc;
 
@@ -28,7 +28,10 @@ struct Base<B: Backend> {
 }
 impl<B: Backend> Base<B> {
     fn init(d: &B::Device) -> Self {
-        Self { l1: LinearConfig::new(EMB_DIM, 64).init(d), l2: LinearConfig::new(64, 32).init(d) }
+        Self {
+            l1: LinearConfig::new(EMB_DIM, 64).init(d),
+            l2: LinearConfig::new(64, 32).init(d),
+        }
     }
     fn features(&self, x: Tensor<B, 2>) -> Tensor<B, 2> {
         activation::relu(self.l2.forward(activation::relu(self.l1.forward(x))))
@@ -41,7 +44,9 @@ struct Head<B: Backend> {
 }
 impl<B: Backend> Head<B> {
     fn init(d: &B::Device) -> Self {
-        Self { l: LinearConfig::new(32, EMB_DIM).init(d) }
+        Self {
+            l: LinearConfig::new(32, EMB_DIM).init(d),
+        }
     }
     fn forward(&self, feat: Tensor<B, 2>) -> Tensor<B, 2> {
         self.l.forward(feat)
@@ -58,7 +63,12 @@ fn one_hot_noisy(c: usize, rng: &mut Rng) -> Vec<f32> {
     q
 }
 
-fn batch(concepts: &[usize], reps: usize, device: &Dev, rng: &mut Rng) -> (Tensor<AD, 2>, Tensor<AD, 1, Int>) {
+fn batch(
+    concepts: &[usize],
+    reps: usize,
+    device: &Dev,
+    rng: &mut Rng,
+) -> (Tensor<AD, 2>, Tensor<AD, 1, Int>) {
     let mut xs = Vec::new();
     let mut ys = Vec::new();
     for _ in 0..reps {
@@ -82,7 +92,12 @@ fn accuracy(base: &Base<AD>, head: &Head<AD>, concepts: &[usize], device: &Dev) 
         let x = Tensor::<AD, 2>::from_data(TensorData::new(q, [1, EMB_DIM]), device);
         let logits = head.forward(base.features(x));
         let v: Vec<f32> = logits.into_data().to_vec().unwrap();
-        let pred = v.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).unwrap().0;
+        let pred = v
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .unwrap()
+            .0;
         if pred == c {
             correct += 1;
         }
@@ -135,7 +150,11 @@ fn main() {
             head = opt.step(lr, head, gh); // only the adapter moves; base stays frozen
         }
         let acc1 = accuracy(&base, &head, group, &device);
-        println!("  agent [{name:<22}] adapter accuracy on its niche: {:.0}% → {:.0}%", acc0 * 100.0, acc1 * 100.0);
+        println!(
+            "  agent [{name:<22}] adapter accuracy on its niche: {:.0}% → {:.0}%",
+            acc0 * 100.0,
+            acc1 * 100.0
+        );
         heads.push(head);
     }
 

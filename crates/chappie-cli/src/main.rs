@@ -51,6 +51,9 @@ fn main() {
 
     let mut day_last_logged = 0u64;
     for t in 0..cfg.ticks {
+        if opts.hud.is_some() && t.is_multiple_of(100) {
+            write_hud(&brain, &opts);
+        }
         let stimuli = world.observe(&mut wrng);
         let action = brain.perceive_act(&stimuli, true);
         let reward = world.step(&action, &mut wrng);
@@ -80,7 +83,10 @@ fn main() {
             let score = exam.examine(&mut brain, t as u64, world.stage());
             world.advance(score);
             brain.set_stage(world.stage());
-            let (hard, recall) = exam.latest().map(|r| (r.hard, r.recall)).unwrap_or((0.0, 0.0));
+            let (hard, recall) = exam
+                .latest()
+                .map(|r| (r.hard, r.recall))
+                .unwrap_or((0.0, 0.0));
             let st = brain.stats();
             println!(
                 "  t={:>5} {:>11} │ clean {} {:.0}% │ hard {:.0}% recall {:.0}% │ rwd {:+.2} │ gpu{} cpu{} cold{}",
@@ -102,6 +108,7 @@ fn main() {
         }
     }
 
+    write_hud(&brain, &opts);
     final_report(&brain, &exam, &cfg);
 
     #[cfg(feature = "burn")]
@@ -144,7 +151,7 @@ fn build_config() -> Config {
                 i += 2;
             }
             "--endless" => i += 1,
-            "--days" | "--diary-dir" | "--task-dir" | "--state-dir" => i += 2,
+            "--days" | "--diary-dir" | "--task-dir" | "--state-dir" | "--hud" => i += 2,
             other => {
                 eprintln!("warning: ignoring unknown arg '{other}'");
                 i += 1;
@@ -182,7 +189,10 @@ fn load_config_file(cfg: &mut Config, path: &str) {
 }
 
 fn print_config(cfg: &Config) {
-    println!("seed={}  ticks={}  propose_threshold={}", cfg.seed, cfg.ticks, cfg.propose_threshold);
+    println!(
+        "seed={}  ticks={}  propose_threshold={}",
+        cfg.seed, cfg.ticks, cfg.propose_threshold
+    );
     println!(
         "budget: gpu={:.0}MB cpu={:.0}MB max_participants={}",
         cfg.budget.gpu_mb, cfg.budget.cpu_mb, cfg.budget.max_participants
@@ -209,19 +219,89 @@ fn build_population() -> Vec<Box<dyn Agent>> {
     use Hemisphere::{Left, Right};
 
     let spec: &[(&str, Hemisphere, &[(&str, f32)], ActionKind, &str, f32)] = &[
-        ("Wernicke", Left, &[("language", 1.0)], Speak, "language", 220.0),
-        ("Broca", Left, &[("language", 0.8), ("social", 0.3)], Speak, "language", 200.0),
-        ("Namer", Left, &[("visual", 0.7), ("language", 0.5)], Speak, "visual", 190.0),
-        ("Grammar", Left, &[("language", 0.6), ("logical", 0.4)], Speak, "language", 150.0),
-        ("Gestalt", Right, &[("visual", 1.0), ("spatial", 0.4)], Speak, "visual", 240.0),
-        ("Navigator", Right, &[("spatial", 1.0), ("visual", 0.3)], Speak, "spatial", 210.0),
+        (
+            "Wernicke",
+            Left,
+            &[("language", 1.0)],
+            Speak,
+            "language",
+            220.0,
+        ),
+        (
+            "Broca",
+            Left,
+            &[("language", 0.8), ("social", 0.3)],
+            Speak,
+            "language",
+            200.0,
+        ),
+        (
+            "Namer",
+            Left,
+            &[("visual", 0.7), ("language", 0.5)],
+            Speak,
+            "visual",
+            190.0,
+        ),
+        (
+            "Grammar",
+            Left,
+            &[("language", 0.6), ("logical", 0.4)],
+            Speak,
+            "language",
+            150.0,
+        ),
+        (
+            "Gestalt",
+            Right,
+            &[("visual", 1.0), ("spatial", 0.4)],
+            Speak,
+            "visual",
+            240.0,
+        ),
+        (
+            "Navigator",
+            Right,
+            &[("spatial", 1.0), ("visual", 0.3)],
+            Speak,
+            "spatial",
+            210.0,
+        ),
         ("Amygdala", Right, &[("danger", 1.0)], Move, "danger", 120.0),
-        ("Prosody", Right, &[("auditory", 0.8), ("social", 0.4)], Speak, "auditory", 170.0),
+        (
+            "Prosody",
+            Right,
+            &[("auditory", 0.8), ("social", 0.4)],
+            Speak,
+            "auditory",
+            170.0,
+        ),
         ("Ear", Right, &[("auditory", 1.0)], Speak, "auditory", 150.0),
-        ("Nose", Right, &[("olfactory", 1.0)], Speak, "olfactory", 90.0),
-        ("Tongue", Right, &[("gustatory", 1.0)], Speak, "gustatory", 90.0),
+        (
+            "Nose",
+            Right,
+            &[("olfactory", 1.0)],
+            Speak,
+            "olfactory",
+            90.0,
+        ),
+        (
+            "Tongue",
+            Right,
+            &[("gustatory", 1.0)],
+            Speak,
+            "gustatory",
+            90.0,
+        ),
         ("Skin", Right, &[("tactile", 1.0)], Speak, "tactile", 110.0),
-        ("Novelty", Right, &[("reward", 0.7), ("danger", 0.3)], Attend, "", 100.0),
+        (
+            "Novelty",
+            Right,
+            &[("reward", 0.7), ("danger", 0.3)],
+            Attend,
+            "",
+            100.0,
+        ),
     ];
 
     #[cfg_attr(not(feature = "burn"), allow(unused_mut))]
@@ -244,7 +324,12 @@ fn build_population() -> Vec<Box<dyn Agent>> {
                 id,
                 "Neocortex",
                 Hemisphere::Left,
-                embed(&[("language", 0.5), ("logical", 0.5), ("numeric", 0.5), ("visual", 0.4)]),
+                embed(&[
+                    ("language", 0.5),
+                    ("logical", 0.5),
+                    ("numeric", 0.5),
+                    ("visual", 0.4),
+                ]),
                 320.0,
             )
             .boxed(),
@@ -260,7 +345,9 @@ fn build_population() -> Vec<Box<dyn Agent>> {
 
 fn bar(x: f32, width: usize) -> String {
     let filled = ((x.clamp(0.0, 1.0)) * width as f32).round() as usize;
-    (0..width).map(|i| if i < filled { '█' } else { '░' }).collect()
+    (0..width)
+        .map(|i| if i < filled { '█' } else { '░' })
+        .collect()
 }
 
 fn spark(scores: &[f32]) -> String {
@@ -274,7 +361,11 @@ fn spark(scores: &[f32]) -> String {
 }
 
 fn narrate_tick(t: usize, tr: &chappie_brain::Trace, reward: f32) {
-    let salient: Vec<String> = tr.salient.iter().map(|(l, s)| format!("{l}:{s:.2}")).collect();
+    let salient: Vec<String> = tr
+        .salient
+        .iter()
+        .map(|(l, s)| format!("{l}:{s:.2}"))
+        .collect();
     println!(
         "t={t}  see[{}]  dom={} lead={} surprise={:.2}",
         salient.join(" "),
@@ -294,7 +385,11 @@ fn narrate_tick(t: usize, tr: &chappie_brain::Trace, reward: f32) {
     let mut props: Vec<&(String, String, String, f32)> = tr.proposals.iter().collect();
     props.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap_or(std::cmp::Ordering::Equal));
     for (name, kind, utter, w) in props.iter().take(4) {
-        let u = if utter.is_empty() { String::new() } else { format!(" \"{utter}\"") };
+        let u = if utter.is_empty() {
+            String::new()
+        } else {
+            format!(" \"{utter}\"")
+        };
         println!("       {name:<10} → {kind}{u}  (w={w:.2})");
     }
     println!(
@@ -357,7 +452,10 @@ fn final_report(brain: &Brain, exam: &Examiner, cfg: &Config) {
             spark(&recall_curve),
             last_recall * 100.0
         );
-        println!("  hard   end {:.0}%  (noisy + composite probes)", last_hard * 100.0);
+        println!(
+            "  hard   end {:.0}%  (noisy + composite probes)",
+            last_hard * 100.0
+        );
     }
 
     if let Some(rep) = exam.history.last() {
@@ -369,7 +467,12 @@ fn final_report(brain: &Brain, exam: &Examiner, cfg: &Config) {
 
     println!("\nspecialists that emerged (reliability · activations):");
     for (name, rel, acts) in brain.cortex().top_reliability(6) {
-        println!("  {name:<10} {} {:.2}  ({} activations)", bar(rel / 1.5, 8), rel, acts);
+        println!(
+            "  {name:<10} {} {:.2}  ({} activations)",
+            bar(rel / 1.5, 8),
+            rel,
+            acts
+        );
     }
 
     println!("\nstrongest connections formed (fire together, wire together):");
@@ -388,14 +491,22 @@ fn final_report(brain: &Brain, exam: &Examiner, cfg: &Config) {
     let cpu = brain.cortex().tier_names(Placement::Cpu);
     println!(
         "  🔥 gpu  (hot) : {:<40} [{:.0}/{:.0}MB, peak {:.0}]",
-        if gpu.is_empty() { "—".into() } else { gpu.join(", ") },
+        if gpu.is_empty() {
+            "—".into()
+        } else {
+            gpu.join(", ")
+        },
         st.gpu_mb,
         st.gpu_budget,
         st.peak_gpu_mb
     );
     println!(
         "  ·  cpu  (warm): {:<40} [{:.0}/{:.0}MB, peak {:.0}]",
-        if cpu.is_empty() { "—".into() } else { cpu.join(", ") },
+        if cpu.is_empty() {
+            "—".into()
+        } else {
+            cpu.join(", ")
+        },
         st.cpu_mb,
         st.cpu_budget,
         st.peak_cpu_mb
@@ -414,12 +525,35 @@ fn final_report(brain: &Brain, exam: &Examiner, cfg: &Config) {
 
     // Machine-readable line — a benchmark referenced to its exact config AND the
     // git commit it ran against, so benchmark movements correlate to changes.
-    let flavor = if cfg!(feature = "burn") { "burn" } else { "std" };
+    let flavor = if cfg!(feature = "burn") {
+        "burn"
+    } else {
+        "std"
+    };
     println!(
         "\nRESULT git={} build={} seed={} ticks={} bench_final={:.3} bench_best={:.3} bench_auc={:.3} bench_hard={:.3} bench_recall={:.3} reward={:.3} thinks={} agents={} recruited={} pruned={} deep={} reflexes={} days={} stage={} peak_gpu_mb={:.0} peak_cpu_mb={:.0} gpu_budget={:.0} cpu_budget={:.0}",
-        git_hash(), flavor, cfg.seed, cfg.ticks, last, best, auc, last_hard, last_recall, st.avg_reward, st.thinks,
-        st.agents_total, st.recruited, st.pruned, st.deep_memories, st.reflexes, st.day, st.stage,
-        st.peak_gpu_mb, st.peak_cpu_mb, cfg.budget.gpu_mb, cfg.budget.cpu_mb
+        git_hash(),
+        flavor,
+        cfg.seed,
+        cfg.ticks,
+        last,
+        best,
+        auc,
+        last_hard,
+        last_recall,
+        st.avg_reward,
+        st.thinks,
+        st.agents_total,
+        st.recruited,
+        st.pruned,
+        st.deep_memories,
+        st.reflexes,
+        st.day,
+        st.stage,
+        st.peak_gpu_mb,
+        st.peak_cpu_mb,
+        cfg.budget.gpu_mb,
+        cfg.budget.cpu_mb
     );
 }
 
@@ -445,6 +579,7 @@ struct RunOpts {
     diary_dir: String,
     task_dir: String,
     state_dir: String,
+    hud: Option<String>,
 }
 
 impl RunOpts {
@@ -455,6 +590,7 @@ impl RunOpts {
             diary_dir: "diary".into(),
             task_dir: "tasks".into(),
             state_dir: "state".into(),
+            hud: None,
         };
         let args: Vec<String> = std::env::args().collect();
         let mut i = 1;
@@ -486,10 +622,21 @@ impl RunOpts {
                     }
                     i += 2;
                 }
+                "--hud" => {
+                    o.hud = args.get(i + 1).cloned();
+                    i += 2;
+                }
                 _ => i += 1,
             }
         }
         o
+    }
+}
+
+/// Write the live HUD frame, if `--hud <path>` was given.
+fn write_hud(brain: &Brain, opts: &RunOpts) {
+    if let Some(p) = &opts.hud {
+        let _ = std::fs::write(p, brain.telemetry_json());
     }
 }
 
@@ -541,6 +688,9 @@ fn run_endless(
             }
         }
 
+        if opts.hud.is_some() && t % 100 == 0 {
+            write_hud(brain, opts);
+        }
         let stimuli = world.observe(wrng);
         let action = brain.perceive_act(&stimuli, true);
         let reward = world.step(&action, wrng);
@@ -635,7 +785,14 @@ fn write_diary(dir: &str, dream: &DreamLog, st: &MindStats) {
 #[cfg(feature = "burn")]
 fn neo_accuracy(brain: &Brain, nid: AgentId) -> f32 {
     let concepts = [
-        "visual", "auditory", "tactile", "olfactory", "language", "logical", "numeric", "social",
+        "visual",
+        "auditory",
+        "tactile",
+        "olfactory",
+        "language",
+        "logical",
+        "numeric",
+        "social",
         "danger",
     ];
     let correct = concepts

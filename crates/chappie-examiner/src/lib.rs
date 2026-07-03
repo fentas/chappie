@@ -43,7 +43,14 @@ pub struct Examiner {
 }
 
 const CONCEPTS_TESTED: [&str; 9] = [
-    "visual", "auditory", "tactile", "olfactory", "language", "logical", "numeric", "social",
+    "visual",
+    "auditory",
+    "tactile",
+    "olfactory",
+    "language",
+    "logical",
+    "numeric",
+    "social",
     "danger",
 ];
 
@@ -56,7 +63,12 @@ fn kind_for(concept: &str) -> ActionKind {
 }
 
 fn stim(label: &str, features: Embedding, intensity: f32) -> Stimulus {
-    Stimulus { modality: Modality::Sight, label: label.to_string(), features, intensity }
+    Stimulus {
+        modality: Modality::Sight,
+        label: label.to_string(),
+        features,
+        intensity,
+    }
 }
 
 /// A stimulus that asks "what did you just see?" — answerable only from memory.
@@ -124,7 +136,12 @@ impl Examiner {
             })
             .collect();
 
-        Examiner { clean, hard, recall, history: Vec::new() }
+        Examiner {
+            clean,
+            hard,
+            recall,
+            history: Vec::new(),
+        }
     }
 
     fn score(mind: &mut dyn Mind, tasks: &[Task]) -> (f32, Vec<(String, f32)>) {

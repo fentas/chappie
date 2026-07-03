@@ -134,7 +134,9 @@ fn main() {
         us(t_delib),
         us(t_cons)
     );
-    println!("→ schedule is the O(n) part; deliberation (the 'inference') is O(participants), constant in n.");
+    println!(
+        "→ schedule is the O(n) part; deliberation (the 'inference') is O(participants), constant in n."
+    );
 
     // ---- 3. Connectome growth cost ---------------------------------------
     println!("\n== connectome grow() cost (the O(n^2) resize) ==");
@@ -147,7 +149,12 @@ fn main() {
         }
         let ms = t.elapsed().as_secs_f64() * 1e3 / iters as f64;
         let mb = (n * n * 4) as f64 / (1024.0 * 1024.0);
-        println!("  n={:>5}: {:>7.3} ms/grow   (matrix {:>7.2} MB)", n, ms, mb);
+        println!(
+            "  n={:>5}: {:>7.3} ms/grow   (matrix {:>7.2} MB)",
+            n, ms, mb
+        );
     }
-    println!("→ dense connectome is n^2: fine to ~4k agents (67MB); a sparse graph is needed beyond that.");
+    println!(
+        "→ dense connectome is n^2: fine to ~4k agents (67MB); a sparse graph is needed beyond that."
+    );
 }

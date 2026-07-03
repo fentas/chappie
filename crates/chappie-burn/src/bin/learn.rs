@@ -10,11 +10,24 @@ use chappie_harness::Agent;
 
 fn main() {
     let concepts = [
-        "visual", "auditory", "tactile", "olfactory", "language", "logical", "numeric", "social",
+        "visual",
+        "auditory",
+        "tactile",
+        "olfactory",
+        "language",
+        "logical",
+        "numeric",
+        "social",
         "danger",
     ];
     let mut rng = Rng::new(7);
-    let mut agent = BurnAgent::new(0, "Neocortex", Hemisphere::Left, embed(&[("language", 1.0)]), 320.0);
+    let mut agent = BurnAgent::new(
+        0,
+        "Neocortex",
+        Hemisphere::Left,
+        embed(&[("language", 1.0)]),
+        320.0,
+    );
 
     let eval = |agent: &BurnAgent| -> f32 {
         let correct = concepts

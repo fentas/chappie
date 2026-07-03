@@ -19,7 +19,7 @@ use burn::nn::loss::CrossEntropyLossConfig;
 use burn::nn::{Linear, LinearConfig};
 use burn::optim::{AdamConfig, GradientsParams, Optimizer};
 use burn::tensor::backend::Backend;
-use burn::tensor::{activation, Int, Tensor, TensorData};
+use burn::tensor::{Int, Tensor, TensorData, activation};
 
 use chappie_core::*;
 use chappie_harness::{Agent, Context};
@@ -110,7 +110,8 @@ impl BurnAgent {
     /// Forward pass → (best concept index, its probability).
     pub fn predict(&self, query: &Embedding) -> (usize, f32) {
         let model = self.model.as_ref().expect("model resident");
-        let x = Tensor::<AD, 2>::from_data(TensorData::new(query.clone(), [1, EMB_DIM]), &self.device);
+        let x =
+            Tensor::<AD, 2>::from_data(TensorData::new(query.clone(), [1, EMB_DIM]), &self.device);
         let probs = activation::softmax(model.forward(x), 1);
         let v: Vec<f32> = probs.into_data().to_vec().expect("f32 probs");
         let mut bi = 0usize;

@@ -57,7 +57,10 @@ struct Thalamus;
 
 impl Thalamus {
     fn gate(&self, percepts: Vec<Percept>, floor: f32) -> Vec<Percept> {
-        percepts.into_iter().filter(|p| p.salience >= floor).collect()
+        percepts
+            .into_iter()
+            .filter(|p| p.salience >= floor)
+            .collect()
     }
 
     /// Salience-weighted fusion into one query embedding + its dominant concept.
@@ -104,7 +107,11 @@ impl Semantic {
         if self.protos.is_empty() {
             return 1.0;
         }
-        let best = self.protos.iter().map(|p| cosine(p, e)).fold(f32::MIN, f32::max);
+        let best = self
+            .protos
+            .iter()
+            .map(|p| cosine(p, e))
+            .fold(f32::MIN, f32::max);
         (1.0 - best).clamp(0.0, 1.0)
     }
 
@@ -177,7 +184,8 @@ impl Vitals {
         self.pressure += amount;
     }
     fn feel(&mut self, reward: f32, surprise: f32, gain: f32, decay: f32) {
-        self.curiosity = (self.curiosity + gain * surprise - decay * reward.max(0.0)).clamp(0.0, 1.0);
+        self.curiosity =
+            (self.curiosity + gain * surprise - decay * reward.max(0.0)).clamp(0.0, 1.0);
     }
     /// Wake: measure the day just lived, adapt the encoding threshold toward the
     /// target day length (Bitcoin-style difficulty), and reset the buffer.
@@ -207,7 +215,11 @@ struct WorkingMemory {
 
 impl WorkingMemory {
     fn new() -> Self {
-        WorkingMemory { slots: Vec::new(), cap: 7, decay: 0.6 }
+        WorkingMemory {
+            slots: Vec::new(),
+            cap: 7,
+            decay: 0.6,
+        }
     }
     /// Age every trace; forget the faint ones.
     fn decay(&mut self) {
@@ -295,6 +307,62 @@ pub struct Snapshot {
 }
 
 // ============================================================================
+// Telemetry — a rich JSON frame of the live mind, for the web HUD.
+// ============================================================================
+
+#[derive(Serialize)]
+struct AgentTel {
+    name: String,
+    hemisphere: String,
+    tier: String,
+    reliability: f32,
+    activations: u64,
+    priority: f32,
+    concept: String,
+}
+#[derive(Serialize)]
+struct EdgeTel {
+    a: String,
+    b: String,
+    weight: f32,
+}
+#[derive(Serialize)]
+struct DeepTel {
+    concept: String,
+    action: String,
+    valence: f32,
+    strength: f32,
+}
+#[derive(Serialize)]
+struct Telemetry {
+    tick: u64,
+    day: u64,
+    stage: String,
+    mood: f32,
+    energy: f32,
+    curiosity: f32,
+    boredom: f32,
+    pressure: f32,
+    gpu: usize,
+    cpu: usize,
+    cold: usize,
+    agents: usize,
+    recruited: u64,
+    pruned: u64,
+    deep_memories: usize,
+    reflexes: u64,
+    thinks: u64,
+    sleeps: u64,
+    avg_reward: f32,
+    character: String,
+    roster: Vec<AgentTel>,
+    edges: Vec<EdgeTel>,
+    deep: Vec<DeepTel>,
+    reward_history: Vec<f32>,
+    mood_history: Vec<f32>,
+}
+
+// ============================================================================
 // Brain — the whole thing.
 // ============================================================================
 
@@ -318,7 +386,9 @@ struct RoutingGate {
 }
 impl RoutingGate {
     fn new() -> Self {
-        Self { w: vec![0.0; EMB_DIM * GATE_STATE] }
+        Self {
+            w: vec![0.0; EMB_DIM * GATE_STATE],
+        }
     }
     fn focus(&self, state: &[f32; GATE_STATE]) -> Vec<f32> {
         let mut f = vec![0.0f32; EMB_DIM];
@@ -384,6 +454,8 @@ pub struct Brain {
     reflexes: u64,
     /// The learned, mood-conditioned routing gate — the coordinator that becomes character.
     gate: RoutingGate,
+    /// Rolling mood samples, for the HUD's history sparkline.
+    mood_history: Vec<f32>,
     pending: Option<Pending>,
     last_trace: Trace,
 }
@@ -397,7 +469,10 @@ impl Brain {
             senses: Senses,
             thalamus: Thalamus,
             cortex,
-            hippocampus: Hippocampus { buf: Vec::new(), cap },
+            hippocampus: Hippocampus {
+                buf: Vec::new(),
+                cap,
+            },
             semantic: Semantic { protos: Vec::new() },
             vitals: Vitals {
                 curiosity: 0.3,
@@ -426,6 +501,7 @@ impl Brain {
             reflex_count: vec![0; EMB_DIM],
             reflexes: 0,
             gate: RoutingGate::new(),
+            mood_history: Vec::new(),
             pending: None,
             last_trace: Trace::default(),
         }
@@ -491,7 +567,9 @@ impl Brain {
         }
         if self.deep.len() >= self.cfg.gatekeeper.capacity {
             if let Some((wi, _)) = self.deep.iter().enumerate().min_by(|a, b| {
-                a.1.strength.partial_cmp(&b.1.strength).unwrap_or(std::cmp::Ordering::Equal)
+                a.1.strength
+                    .partial_cmp(&b.1.strength)
+                    .unwrap_or(std::cmp::Ordering::Equal)
             }) {
                 self.deep.remove(wi);
             }
@@ -526,9 +604,11 @@ impl Brain {
     fn dream_tick(&mut self, query: &Embedding) -> (Decision, Vec<AgentId>) {
         let dom = argmax(query);
         let surprise = self.semantic.novelty(query);
-        let lead =
-            self.thalamus
-                .lead(surprise, self.vitals.curiosity, self.cfg.hemisphere.novelty_threshold);
+        let lead = self.thalamus.lead(
+            surprise,
+            self.vitals.curiosity,
+            self.cfg.hemisphere.novelty_threshold,
+        );
         let mut active = self.cortex.schedule(query, &mut self.rng);
         let proposals =
             self.cortex
@@ -558,6 +638,71 @@ impl Brain {
 
     pub fn cortex(&self) -> &Harness {
         &self.cortex
+    }
+
+    /// A rich JSON frame of the whole live mind — the web HUD reads this.
+    pub fn telemetry_json(&self) -> String {
+        let st = self.stats();
+        let roster: Vec<AgentTel> = self
+            .cortex
+            .roster()
+            .into_iter()
+            .map(|v| AgentTel {
+                name: v.name,
+                hemisphere: v.hemisphere.to_string(),
+                tier: v.tier.to_string(),
+                reliability: v.reliability,
+                activations: v.activations,
+                priority: v.priority,
+                concept: v.concept,
+            })
+            .collect();
+        let edges: Vec<EdgeTel> = self
+            .cortex
+            .top_edges(24)
+            .into_iter()
+            .map(|(a, b, weight)| EdgeTel { a, b, weight })
+            .collect();
+        let deep: Vec<DeepTel> = self
+            .deep
+            .iter()
+            .map(|d| DeepTel {
+                concept: CONCEPTS[argmax(&d.fingerprint)].to_string(),
+                action: format!("{:?}", d.action),
+                valence: d.valence,
+                strength: d.strength,
+            })
+            .collect();
+        let rn = self.recent_rewards.len();
+        let reward_history = self.recent_rewards[rn.saturating_sub(120)..].to_vec();
+        let t = Telemetry {
+            tick: self.vitals.age_ticks,
+            day: st.day,
+            stage: st.stage,
+            mood: self.mood,
+            energy: st.energy,
+            curiosity: self.vitals.curiosity,
+            boredom: self.vitals.boredom,
+            pressure: self.vitals.pressure,
+            gpu: st.gpu_count,
+            cpu: st.cpu_count,
+            cold: st.cold_count,
+            agents: st.agents_total,
+            recruited: st.recruited,
+            pruned: st.pruned,
+            deep_memories: st.deep_memories,
+            reflexes: st.reflexes,
+            thinks: st.thinks,
+            sleeps: st.sleeps,
+            avg_reward: st.avg_reward,
+            character: st.gate_note,
+            roster,
+            edges,
+            deep,
+            reward_history,
+            mood_history: self.mood_history.clone(),
+        };
+        serde_json::to_string(&t).unwrap_or_else(|_| "{}".to_string())
     }
 
     /// Capture the resumable learnable state.
@@ -640,7 +785,11 @@ impl Mind for Brain {
             let utter = self.working.recall().map(|c| CONCEPTS[c].to_string());
             self.cortex.end_tick();
             return Action {
-                kind: if utter.is_some() { ActionKind::Speak } else { ActionKind::Noop },
+                kind: if utter.is_some() {
+                    ActionKind::Speak
+                } else {
+                    ActionKind::Noop
+                },
                 utterance: utter.unwrap_or_default(),
                 target: vec![0.0; EMB_DIM],
                 confidence: 0.6,
@@ -688,7 +837,11 @@ impl Mind for Brain {
         self.working.push(dom, 1.0);
 
         let surprise = self.semantic.novelty(&query);
-        let lead = self.thalamus.lead(surprise, self.vitals.curiosity, self.cfg.hemisphere.novelty_threshold);
+        let lead = self.thalamus.lead(
+            surprise,
+            self.vitals.curiosity,
+            self.cfg.hemisphere.novelty_threshold,
+        );
 
         // FIRST DOOR — the gatekeeper's fast lane. Match the percept against deep
         // memories *before* the coordinator runs. A fear match reacts instantly
@@ -743,23 +896,30 @@ impl Mind for Brain {
         let mut active = self.cortex.schedule(&query, &mut self.rng);
 
         // 5. Deliberate → consensus (System 1: the fast reflex).
-        let mut proposals = self
-            .cortex
-            .deliberate(&query, dom, lead, self.vitals.curiosity, &mut self.rng);
+        let mut proposals =
+            self.cortex
+                .deliberate(&query, dom, lead, self.vitals.curiosity, &mut self.rng);
         // Gatekeeper prime: a deep memory speaks fast and loud in the workspace.
         if let Some((kind, utter, sim)) = prime {
             proposals.push(Proposal {
                 agent: u32::MAX,
                 agent_name: "Gatekeeper".to_string(),
                 hemisphere: Hemisphere::Right,
-                action: Action { kind, utterance: utter, target: query.clone(), confidence: sim },
+                action: Action {
+                    kind,
+                    utterance: utter,
+                    target: query.clone(),
+                    confidence: sim,
+                },
                 weight: sim * self.cfg.gatekeeper.prime_boost,
                 rationale: "deep-memory prime".to_string(),
             });
         }
         let mut decision = self.cortex.consensus(&proposals);
         // The gatekeeper is not an agent — drop its pseudo-id from the winners.
-        decision.winners.retain(|&w| (w as usize) < self.cortex.len());
+        decision
+            .winners
+            .retain(|&w| (w as usize) < self.cortex.len());
 
         // 5b. System 2: a split coalition (low agreement) means the reflex is
         //     unsure — so THINK. Widen the coalition and re-deliberate until we're
@@ -770,10 +930,12 @@ impl Mind for Brain {
             && escalations < self.cfg.thinking.max_escalations
         {
             let extra = self.cfg.thinking.widen_participants * (escalations + 1);
-            active = self.cortex.widen_participants(extra, self.cfg.thinking.widen_floor_mult);
-            let wider = self
+            active = self
                 .cortex
-                .deliberate(&query, dom, lead, self.vitals.curiosity, &mut self.rng);
+                .widen_participants(extra, self.cfg.thinking.widen_floor_mult);
+            let wider =
+                self.cortex
+                    .deliberate(&query, dom, lead, self.vitals.curiosity, &mut self.rng);
             decision = self.cortex.consensus(&wider);
             escalations += 1;
         }
@@ -787,10 +949,18 @@ impl Mind for Brain {
             dominant: CONCEPTS[dom].to_string(),
             lead: if lead == Hemisphere::Left { "L" } else { "R" },
             surprise,
-            salient: gated.iter().map(|p| (p.label.clone(), p.salience)).collect(),
+            salient: gated
+                .iter()
+                .map(|p| (p.label.clone(), p.salience))
+                .collect(),
             active: active
                 .iter()
-                .map(|&id| (self.cortex.name(id).to_string(), self.cortex.placement_of(id).tag()))
+                .map(|&id| {
+                    (
+                        self.cortex.name(id).to_string(),
+                        self.cortex.placement_of(id).tag(),
+                    )
+                })
                 .collect(),
             proposals: proposals
                 .iter()
@@ -876,12 +1046,15 @@ impl Mind for Brain {
             }
             valence = valence.clamp(-1.5, 1.5);
             self.mood = (0.9 * self.mood + 0.1 * valence).clamp(-1.0, 1.0);
+            self.mood_history.push(self.mood);
+            if self.mood_history.len() > 240 {
+                self.mood_history.remove(0);
+            }
 
             // Deposit a "gap" against the dominant concept when the moment was
             // conflicted (low self-agreement) or went badly (negative valence).
             if let Some(c) = concept_index(&p.episode.dominant) {
-                let conflict =
-                    (1.0 - p.episode.decision.confidence).max(0.0) + (-valence).max(0.0);
+                let conflict = (1.0 - p.episode.decision.confidence).max(0.0) + (-valence).max(0.0);
                 self.gaps[c] += conflict;
             }
             for g in self.gaps.iter_mut() {
@@ -897,7 +1070,10 @@ impl Mind for Brain {
                 let (kind, utter) = if valence < 0.0 {
                     (ActionKind::Move, String::new())
                 } else {
-                    (p.episode.decision.kind, p.episode.decision.utterance.clone())
+                    (
+                        p.episode.decision.kind,
+                        p.episode.decision.utterance.clone(),
+                    )
                 };
                 self.burn_deep(&p.episode.query, kind, &utter, valence);
             } else if let Some(c) = concept_index(&p.episode.dominant) {
@@ -927,7 +1103,8 @@ impl Mind for Brain {
                 self.cfg.vitals.curiosity_reward_decay,
             );
             // Learn from the *felt* valence (co-regulated + self-harmony), not raw reward.
-            self.cortex.reinforce(&p.winners, &p.episode.active_agents, valence);
+            self.cortex
+                .reinforce(&p.winners, &p.episode.active_agents, valence);
 
             // Train the routing gate: in the state that produced this routing, nudge the
             // focus toward whom it trusted, scaled by how it felt. Character forming — a
@@ -1105,9 +1282,10 @@ impl Mind for Brain {
                     self.gaps[c] = 0.0;
                 }
             }
-            let victims = self
-                .cortex
-                .prune_candidates(self.cfg.growth.prune_idle, self.cfg.growth.prune_reliability);
+            let victims = self.cortex.prune_candidates(
+                self.cfg.growth.prune_idle,
+                self.cfg.growth.prune_reliability,
+            );
             for id in victims {
                 self.cortex.prune(id);
                 self.pruned += 1;

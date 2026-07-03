@@ -216,7 +216,11 @@ pub struct Connectome {
 
 impl Connectome {
     pub fn new(n: usize, max: f32) -> Self {
-        Connectome { n, w: vec![0.0; n * n], max }
+        Connectome {
+            n,
+            w: vec![0.0; n * n],
+            max,
+        }
     }
 
     pub fn weight(&self, a: usize, b: usize) -> f32 {
@@ -288,6 +292,17 @@ pub struct Decision {
     pub action: Action,
     pub agreement: f32,
     pub winners: Vec<AgentId>,
+}
+
+/// A per-agent snapshot for the HUD.
+pub struct AgentView {
+    pub name: String,
+    pub hemisphere: &'static str,
+    pub tier: &'static str,
+    pub reliability: f32,
+    pub activations: u64,
+    pub priority: f32,
+    pub concept: String,
 }
 
 pub struct Harness {
@@ -471,29 +486,30 @@ impl Harness {
         let thr = self.cfg.propose_threshold;
         let cpu_pen = self.cfg.priority.cpu_penalty;
 
-        let think_round = |slots: &mut [Slot], prior: &[Proposal], rng: &mut Rng| -> Vec<Proposal> {
-            let mut out = Vec::with_capacity(ids.len());
-            for &id in &ids {
-                let ctx = Context {
-                    query,
-                    dominant,
-                    lead,
-                    curiosity,
-                    prior,
-                    lead_gain: h.lead_gain,
-                    follow_gain: h.follow_gain,
-                    curiosity_boost: h.curiosity_boost,
-                    propose_threshold: thr,
-                };
-                let place = slots[id as usize].placement;
-                let mut p = slots[id as usize].agent.think(&ctx, rng);
-                if place == Placement::Cpu {
-                    p.weight *= 1.0 - cpu_pen;
+        let think_round =
+            |slots: &mut [Slot], prior: &[Proposal], rng: &mut Rng| -> Vec<Proposal> {
+                let mut out = Vec::with_capacity(ids.len());
+                for &id in &ids {
+                    let ctx = Context {
+                        query,
+                        dominant,
+                        lead,
+                        curiosity,
+                        prior,
+                        lead_gain: h.lead_gain,
+                        follow_gain: h.follow_gain,
+                        curiosity_boost: h.curiosity_boost,
+                        propose_threshold: thr,
+                    };
+                    let place = slots[id as usize].placement;
+                    let mut p = slots[id as usize].agent.think(&ctx, rng);
+                    if place == Placement::Cpu {
+                        p.weight *= 1.0 - cpu_pen;
+                    }
+                    out.push(p);
                 }
-                out.push(p);
-            }
-            out
-        };
+                out
+            };
 
         let round1 = think_round(&mut self.slots, &[], rng);
         think_round(&mut self.slots, &round1, rng)
@@ -525,7 +541,11 @@ impl Harness {
             }
         }
 
-        let agreement = if total > 1e-6 { win_weight / total } else { 0.0 };
+        let agreement = if total > 1e-6 {
+            win_weight / total
+        } else {
+            0.0
+        };
         let action = best_p
             .map(|p| Action {
                 confidence: agreement,
@@ -546,8 +566,11 @@ impl Harness {
         if reward > 0.0 {
             for i in 0..winners.len() {
                 for j in (i + 1)..winners.len() {
-                    self.connectome
-                        .strengthen(winners[i] as usize, winners[j] as usize, rate * reward);
+                    self.connectome.strengthen(
+                        winners[i] as usize,
+                        winners[j] as usize,
+                        rate * reward,
+                    );
                 }
             }
         }
@@ -616,11 +639,16 @@ impl Harness {
         self.slots[id as usize].placement
     }
     pub fn id_of(&self, name: &str) -> Option<AgentId> {
-        self.slots.iter().find(|s| s.agent.name() == name).map(|s| s.agent.id())
+        self.slots
+            .iter()
+            .find(|s| s.agent.name() == name)
+            .map(|s| s.agent.id())
     }
     /// Probe an agent's concept prediction (None unless it's model-backed).
     pub fn probe(&self, id: AgentId, query: &Embedding) -> Option<usize> {
-        self.slots.get(id as usize).and_then(|s| s.agent.predict_concept(query))
+        self.slots
+            .get(id as usize)
+            .and_then(|s| s.agent.predict_concept(query))
     }
     pub fn gpu_mb(&self) -> f32 {
         self.gpu_mb
@@ -682,6 +710,30 @@ impl Harness {
             }
         }
         acc
+    }
+
+    /// Full per-agent view of the live population — for the HUD.
+    pub fn roster(&self) -> Vec<AgentView> {
+        self.slots
+            .iter()
+            .filter(|s| !s.dead)
+            .map(|s| AgentView {
+                name: s.agent.name().to_string(),
+                hemisphere: match s.agent.hemisphere() {
+                    Hemisphere::Left => "left",
+                    Hemisphere::Right => "right",
+                },
+                tier: match s.placement {
+                    Placement::Gpu => "gpu",
+                    Placement::Cpu => "cpu",
+                    Placement::Cold => "cold",
+                },
+                reliability: s.agent.reliability(),
+                activations: s.activations,
+                priority: s.priority,
+                concept: CONCEPTS[argmax(s.agent.competency())].to_string(),
+            })
+            .collect()
     }
 
     // ---- growth & pruning --------------------------------------------------
@@ -747,7 +799,10 @@ impl Harness {
         self.cfg.budget.cpu_mb
     }
     pub fn count_tier(&self, t: Placement) -> usize {
-        self.slots.iter().filter(|s| !s.dead && s.placement == t).count()
+        self.slots
+            .iter()
+            .filter(|s| !s.dead && s.placement == t)
+            .count()
     }
     pub fn tier_names(&self, t: Placement) -> Vec<String> {
         self.slots
@@ -762,7 +817,13 @@ impl Harness {
             .slots
             .iter()
             .filter(|s| !s.dead)
-            .map(|s| (s.agent.name().to_string(), s.agent.reliability(), s.activations))
+            .map(|s| {
+                (
+                    s.agent.name().to_string(),
+                    s.agent.reliability(),
+                    s.activations,
+                )
+            })
             .collect();
         v.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         v.truncate(k);

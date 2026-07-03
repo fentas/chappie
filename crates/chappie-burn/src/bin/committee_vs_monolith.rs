@@ -18,7 +18,7 @@ use burn::nn::loss::CrossEntropyLossConfig;
 use burn::nn::{Linear, LinearConfig};
 use burn::optim::{AdamConfig, GradientsParams, Optimizer};
 use burn::tensor::backend::Backend;
-use burn::tensor::{activation, Int, Tensor, TensorData};
+use burn::tensor::{Int, Tensor, TensorData, activation};
 use chappie_core::*;
 use std::rc::Rc;
 
@@ -70,7 +70,12 @@ fn sample(c: usize, hard: bool, rng: &mut Rng) -> Vec<f32> {
 }
 
 /// A mixed batch (half clean, half hard) over `concepts`.
-fn batch(concepts: &[usize], reps: usize, device: &Dev, rng: &mut Rng) -> (Tensor<AD, 2>, Tensor<AD, 1, Int>) {
+fn batch(
+    concepts: &[usize],
+    reps: usize,
+    device: &Dev,
+    rng: &mut Rng,
+) -> (Tensor<AD, 2>, Tensor<AD, 1, Int>) {
     let mut xs = Vec::new();
     let mut ys = Vec::new();
     for r in 0..reps {
@@ -114,7 +119,10 @@ struct Base<B: Backend> {
 }
 impl<B: Backend> Base<B> {
     fn init(d: &B::Device) -> Self {
-        Self { l1: LinearConfig::new(EMB_DIM, 64).init(d), l2: LinearConfig::new(64, 32).init(d) }
+        Self {
+            l1: LinearConfig::new(EMB_DIM, 64).init(d),
+            l2: LinearConfig::new(64, 32).init(d),
+        }
     }
     fn features(&self, x: Tensor<B, 2>) -> Tensor<B, 2> {
         activation::relu(self.l2.forward(activation::relu(self.l1.forward(x))))
@@ -126,7 +134,9 @@ struct Head<B: Backend> {
 }
 impl<B: Backend> Head<B> {
     fn init(d: &B::Device) -> Self {
-        Self { l: LinearConfig::new(32, EMB_DIM).init(d) }
+        Self {
+            l: LinearConfig::new(32, EMB_DIM).init(d),
+        }
     }
     fn forward(&self, f: Tensor<B, 2>) -> Tensor<B, 2> {
         self.l.forward(f)
@@ -134,7 +144,11 @@ impl<B: Backend> Head<B> {
 }
 
 fn argmax(v: &[f32]) -> usize {
-    v.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).unwrap().0
+    v.iter()
+        .enumerate()
+        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+        .unwrap()
+        .0
 }
 
 fn main() {
@@ -211,8 +225,10 @@ fn main() {
         let feat = base.features(x);
         let mut acc = vec![0.0f32; EMB_DIM];
         for head in &heads {
-            let probs: Vec<f32> =
-                activation::softmax(head.forward(feat.clone()), 1).into_data().to_vec().unwrap();
+            let probs: Vec<f32> = activation::softmax(head.forward(feat.clone()), 1)
+                .into_data()
+                .to_vec()
+                .unwrap();
             let conf = probs.iter().cloned().fold(0.0f32, f32::max);
             for (a, p) in acc.iter_mut().zip(&probs) {
                 *a += conf * *p;
@@ -224,13 +240,18 @@ fn main() {
     // Oracle routing: send each input to its TRUE family's expert. This isolates
     // the naive vote's routing error from the specialists' own representation limit.
     let fam_index = |c: usize| -> usize {
-        families().iter().position(|(_, g)| g.contains(&c)).unwrap_or(0)
+        families()
+            .iter()
+            .position(|(_, g)| g.contains(&c))
+            .unwrap_or(0)
     };
     let committee_oracle = |q: &[f32], true_c: usize| -> usize {
         let x = Tensor::<AD, 2>::from_data(TensorData::new(q.to_vec(), [1, EMB_DIM]), &device);
         let feat = base.features(x);
-        let probs: Vec<f32> =
-            activation::softmax(heads[fam_index(true_c)].forward(feat), 1).into_data().to_vec().unwrap();
+        let probs: Vec<f32> = activation::softmax(heads[fam_index(true_c)].forward(feat), 1)
+            .into_data()
+            .to_vec()
+            .unwrap();
         argmax(&probs)
     };
 
@@ -240,7 +261,10 @@ fn main() {
         100.0 * ok as f32 / set.len() as f32
     };
     let score_oracle = |set: &[(Vec<f32>, usize)]| -> f32 {
-        let ok = set.iter().filter(|(q, c)| committee_oracle(q, *c) == *c).count();
+        let ok = set
+            .iter()
+            .filter(|(q, c)| committee_oracle(q, *c) == *c)
+            .count();
         100.0 * ok as f32 / set.len() as f32
     };
     let mono_p = mono.num_params();

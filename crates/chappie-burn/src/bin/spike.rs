@@ -5,7 +5,7 @@
 
 use burn::backend::wgpu::WgpuDevice;
 use burn::backend::{Autodiff, Wgpu};
-use burn::tensor::{activation, Tensor};
+use burn::tensor::{Tensor, activation};
 
 type B = Wgpu;
 type Ad = Autodiff<Wgpu>;

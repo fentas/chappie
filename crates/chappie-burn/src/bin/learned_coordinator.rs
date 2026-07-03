@@ -17,7 +17,7 @@ use burn::nn::loss::CrossEntropyLossConfig;
 use burn::nn::{Linear, LinearConfig};
 use burn::optim::{AdamConfig, GradientsParams, Optimizer};
 use burn::tensor::backend::Backend;
-use burn::tensor::{activation, Int, Tensor, TensorData};
+use burn::tensor::{Int, Tensor, TensorData, activation};
 use chappie_core::*;
 use std::rc::Rc;
 
@@ -39,7 +39,11 @@ fn all_concepts() -> Vec<usize> {
     vec![0, 1, 2, 3, 5, 7, 8, 9, 10]
 }
 fn family_of(c: usize) -> Vec<usize> {
-    families().into_iter().find(|(_, g)| g.contains(&c)).map(|(_, g)| g).unwrap_or_default()
+    families()
+        .into_iter()
+        .find(|(_, g)| g.contains(&c))
+        .map(|(_, g)| g)
+        .unwrap_or_default()
 }
 
 fn sample(c: usize, hard: bool, rng: &mut Rng) -> Vec<f32> {
@@ -62,7 +66,12 @@ fn sample(c: usize, hard: bool, rng: &mut Rng) -> Vec<f32> {
     q
 }
 
-fn batch(concepts: &[usize], reps: usize, device: &Dev, rng: &mut Rng) -> (Tensor<AD, 2>, Tensor<AD, 1, Int>) {
+fn batch(
+    concepts: &[usize],
+    reps: usize,
+    device: &Dev,
+    rng: &mut Rng,
+) -> (Tensor<AD, 2>, Tensor<AD, 1, Int>) {
     let mut xs = Vec::new();
     let mut ys = Vec::new();
     for r in 0..reps {
@@ -85,7 +94,10 @@ struct Monolith<B: Backend> {
 }
 impl<B: Backend> Monolith<B> {
     fn init(d: &B::Device, hidden: usize) -> Self {
-        Self { l1: LinearConfig::new(EMB_DIM, hidden).init(d), l2: LinearConfig::new(hidden, EMB_DIM).init(d) }
+        Self {
+            l1: LinearConfig::new(EMB_DIM, hidden).init(d),
+            l2: LinearConfig::new(hidden, EMB_DIM).init(d),
+        }
     }
     fn forward(&self, x: Tensor<B, 2>) -> Tensor<B, 2> {
         self.l2.forward(activation::relu(self.l1.forward(x)))
@@ -99,7 +111,10 @@ struct Base<B: Backend> {
 }
 impl<B: Backend> Base<B> {
     fn init(d: &B::Device) -> Self {
-        Self { l1: LinearConfig::new(EMB_DIM, 64).init(d), l2: LinearConfig::new(64, 32).init(d) }
+        Self {
+            l1: LinearConfig::new(EMB_DIM, 64).init(d),
+            l2: LinearConfig::new(64, 32).init(d),
+        }
     }
     fn features(&self, x: Tensor<B, 2>) -> Tensor<B, 2> {
         activation::relu(self.l2.forward(activation::relu(self.l1.forward(x))))
@@ -111,7 +126,9 @@ struct Head<B: Backend> {
 }
 impl<B: Backend> Head<B> {
     fn init(d: &B::Device) -> Self {
-        Self { l: LinearConfig::new(32, EMB_DIM).init(d) }
+        Self {
+            l: LinearConfig::new(32, EMB_DIM).init(d),
+        }
     }
     fn forward(&self, f: Tensor<B, 2>) -> Tensor<B, 2> {
         self.l.forward(f)
@@ -124,16 +141,27 @@ struct Gate<B: Backend> {
 }
 impl<B: Backend> Gate<B> {
     fn init(d: &B::Device, k: usize) -> Self {
-        Self { l: LinearConfig::new(EMB_DIM, k).init(d) }
+        Self {
+            l: LinearConfig::new(EMB_DIM, k).init(d),
+        }
     }
 }
 
 fn argmax(v: &[f32]) -> usize {
-    v.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).unwrap().0
+    v.iter()
+        .enumerate()
+        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+        .unwrap()
+        .0
 }
 
 /// Learned-gate mixture: the expert logits, weighted per-sample by the gate.
-fn committee_logits(base: &Base<AD>, heads: &[Head<AD>], gate: &Gate<AD>, x: Tensor<AD, 2>) -> Tensor<AD, 2> {
+fn committee_logits(
+    base: &Base<AD>,
+    heads: &[Head<AD>],
+    gate: &Gate<AD>,
+    x: Tensor<AD, 2>,
+) -> Tensor<AD, 2> {
     let feat = base.features(x.clone());
     let gw = activation::softmax(gate.l.forward(x), 1); // [n, K]
     let mut out: Option<Tensor<AD, 2>> = None;
@@ -171,7 +199,10 @@ fn committee_acc(
         .iter()
         .filter(|(q, c)| {
             let x = Tensor::<AD, 2>::from_data(TensorData::new(q.clone(), [1, EMB_DIM]), device);
-            let v: Vec<f32> = committee_logits(base, heads, gate, x).into_data().to_vec().unwrap();
+            let v: Vec<f32> = committee_logits(base, heads, gate, x)
+                .into_data()
+                .to_vec()
+                .unwrap();
             argmax(&v) == *c
         })
         .count();
@@ -214,7 +245,8 @@ fn main() {
         let ok = set
             .iter()
             .filter(|(q, c)| {
-                let x = Tensor::<AD, 2>::from_data(TensorData::new(q.clone(), [1, EMB_DIM]), &device);
+                let x =
+                    Tensor::<AD, 2>::from_data(TensorData::new(q.clone(), [1, EMB_DIM]), &device);
                 argmax(&mono.forward(x).into_data().to_vec().unwrap()) == *c
             })
             .count();
@@ -250,15 +282,22 @@ fn main() {
         heads.push(head);
     }
     let fam_index = |c: usize| -> usize {
-        families().iter().position(|(_, g)| g.contains(&c)).unwrap_or(0)
+        families()
+            .iter()
+            .position(|(_, g)| g.contains(&c))
+            .unwrap_or(0)
     };
     let oracle_acc = |set: &[(Vec<f32>, usize)]| -> f32 {
         let ok = set
             .iter()
             .filter(|(q, c)| {
-                let x = Tensor::<AD, 2>::from_data(TensorData::new(q.clone(), [1, EMB_DIM]), &device);
-                let v: Vec<f32> = activation::softmax(heads[fam_index(*c)].forward(base.features(x)), 1)
-                    .into_data().to_vec().unwrap();
+                let x =
+                    Tensor::<AD, 2>::from_data(TensorData::new(q.clone(), [1, EMB_DIM]), &device);
+                let v: Vec<f32> =
+                    activation::softmax(heads[fam_index(*c)].forward(base.features(x)), 1)
+                        .into_data()
+                        .to_vec()
+                        .unwrap();
                 argmax(&v) == *c
             })
             .count();
@@ -266,8 +305,16 @@ fn main() {
     };
 
     println!("learned coordinator — does a *learned* router close the gap?\n");
-    println!("  reference   clean={:.1}%  hard={:.1}%   monolith", mono_acc(&test_clean), mono_acc(&test_hard));
-    println!("  reference   clean={:.1}%  hard={:.1}%   oracle route (the ceiling)\n", oracle_acc(&test_clean), oracle_acc(&test_hard));
+    println!(
+        "  reference   clean={:.1}%  hard={:.1}%   monolith",
+        mono_acc(&test_clean),
+        mono_acc(&test_hard)
+    );
+    println!(
+        "  reference   clean={:.1}%  hard={:.1}%   oracle route (the ceiling)\n",
+        oracle_acc(&test_clean),
+        oracle_acc(&test_hard)
+    );
 
     // Part 1 — the learning curve: train the gate, watch routing develop.
     println!("  the router learning to route (committee, learned gate):");

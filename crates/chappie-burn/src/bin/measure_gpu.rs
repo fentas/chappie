@@ -6,8 +6,8 @@
 //!
 //! Run: WGPU_BACKEND=vulkan cargo run -p chappie-burn --bin measure_gpu --release
 
-use burn::backend::wgpu::WgpuDevice;
 use burn::backend::Wgpu;
+use burn::backend::wgpu::WgpuDevice;
 use burn::tensor::{Tensor, TensorData};
 use std::time::Instant;
 
@@ -72,5 +72,7 @@ fn main() {
     println!(
         "\n→ a few-MB LoRA adapter moves in well under a ms; a multi-hundred-MB model is 10s of ms."
     );
-    println!("→ so: keep the big base resident, hot-swap tiny adapters — exactly the shared-backbone design.");
+    println!(
+        "→ so: keep the big base resident, hot-swap tiny adapters — exactly the shared-backbone design."
+    );
 }

@@ -34,6 +34,14 @@ run = "bash scripts/bench.sh --seed 42 --ticks 4000"
 description = "Live endlessly — keep a diary in diary/, take tasks from tasks/inbox/"
 run = "cargo run --release --bin chappie -- --endless"
 
+[tasks.hud]
+description = "Live HUD — run endlessly, streaming docs/hud.json; open docs/hud.html (serve docs/ or drag the json onto the page)"
+run = "cargo run --release --bin chappie -- --endless --hud docs/hud.json"
+
+[tasks.hud-serve]
+description = "Serve docs/ so the HUD can poll hud.json live at http://localhost:8008/hud.html"
+run = "python3 -m http.server 8008 --directory docs"
+
 [tasks.run]
 description = "Run Chappie (append args after --)"
 run = "cargo run --bin chappie --"

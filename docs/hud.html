@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Chappie · HUD</title>
+<style>
+  :root{
+    --bg:#0b0e14; --panel:#131826; --panel2:#0f1420; --line:#1e2740;
+    --ink:#e6edf3; --dim:#8b98b4; --accent:#6ea8fe; --hot:#ff7043; --warm:#ffca28;
+    --cold:#3a4463; --good:#41d18b; --bad:#ff5c7a; --left:#7c9cff; --right:#f78fb3;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  header{display:flex;align-items:center;gap:14px;padding:10px 16px;
+    border-bottom:1px solid var(--line);background:var(--panel2);position:sticky;top:0;z-index:5}
+  header h1{font-size:15px;margin:0;letter-spacing:.5px}
+  header h1 b{color:var(--accent)}
+  .status{color:var(--dim)}
+  .status b{color:var(--ink)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--cold);display:inline-block}
+  .dot.live{background:var(--good);box-shadow:0 0 8px var(--good)}
+  .src{margin-left:auto;color:var(--dim);font-size:11px}
+  .src input{width:150px;background:var(--panel);color:var(--ink);border:1px solid var(--line);
+    border-radius:5px;padding:3px 6px;font:inherit}
+  main{display:grid;grid-template-columns:280px 1fr 320px;gap:12px;padding:12px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px}
+  .panel h2{margin:0 0 10px;font-size:11px;text-transform:uppercase;letter-spacing:1.2px;color:var(--dim)}
+  .stack{display:flex;flex-direction:column;gap:12px}
+  /* bars */
+  .bar{margin:7px 0}
+  .bar .lbl{display:flex;justify-content:space-between;color:var(--dim);font-size:11px;margin-bottom:3px}
+  .bar .lbl b{color:var(--ink)}
+  .track{height:8px;background:var(--panel2);border-radius:6px;overflow:hidden;position:relative}
+  .fill{height:100%;border-radius:6px;background:var(--accent);transition:width .4s}
+  /* diverging mood bar */
+  .mood .track{display:flex}
+  .mood .mid{position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--line)}
+  .mood .neg,.mood .pos{height:100%}
+  .mood .neg{margin-left:auto;background:var(--bad)}
+  .mood .pos{background:var(--good)}
+  /* stats grid */
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .stat{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+  .stat .v{font-size:19px;font-weight:600}
+  .stat .k{color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:.6px}
+  .tiers{display:flex;gap:6px;margin-top:2px}
+  .pill{padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
+  .pill.gpu{background:rgba(255,112,67,.18);color:var(--hot)}
+  .pill.cpu{background:rgba(255,202,40,.16);color:var(--warm)}
+  .pill.cold{background:rgba(58,68,99,.35);color:var(--dim)}
+  /* roster */
+  .agent{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--panel2)}
+  .agent .tag{width:6px;height:6px;border-radius:50%}
+  .agent .nm{flex:0 0 92px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .agent .cc{color:var(--dim);flex:0 0 62px;font-size:11px}
+  .agent .rel{flex:1;height:6px;background:var(--panel2);border-radius:4px;overflow:hidden}
+  .agent .rel i{display:block;height:100%;background:var(--accent)}
+  .agent.gpu .rel i{background:var(--hot)} .agent.cpu .rel i{background:var(--warm)}
+  .agent.cold{opacity:.5}
+  .agent .ax{flex:0 0 34px;text-align:right;color:var(--dim);font-size:11px}
+  /* character */
+  .char{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{background:var(--panel2);border:1px solid var(--line);border-radius:20px;padding:3px 9px;font-size:11px}
+  .chip b{color:var(--accent)}
+  /* deep memories */
+  .deep{display:flex;flex-direction:column;gap:5px}
+  .dm{display:flex;align-items:center;gap:8px;font-size:12px}
+  .dm .fear{color:var(--bad)} .dm .safe{color:var(--good)}
+  .dm .st{flex:1;height:5px;background:var(--panel2);border-radius:4px;overflow:hidden}
+  .dm .st i{display:block;height:100%;background:var(--dim)}
+  svg{display:block;width:100%}
+  .spark{height:52px}
+  .muted{color:var(--dim);font-size:11px}
+  .empty{color:var(--dim);padding:8px 0;font-style:italic}
+</style>
+</head>
+<body>
+<header>
+  <h1>Chappie · <b>HUD</b></h1>
+  <span class="status"><span id="dot" class="dot"></span>
+    tick <b id="s-tick">–</b> · day <b id="s-day">–</b> · <b id="s-stage">–</b></span>
+  <span class="src">source
+    <input id="src" value="hud.json" spellcheck="false" />
+    · <span id="ago">—</span></span>
+</header>
+
+<main>
+  <!-- left column -->
+  <div class="stack">
+    <div class="panel">
+      <h2>Vitals</h2>
+      <div class="bar mood"><div class="lbl"><span>mood</span><b id="v-mood">0</b></div>
+        <div class="track"><span class="mid"></span><i class="neg" id="mood-neg"></i><i class="pos" id="mood-pos"></i></div></div>
+      <div class="bar"><div class="lbl"><span>energy</span><b id="v-energy">0</b></div>
+        <div class="track"><div class="fill" id="f-energy" style="background:var(--good)"></div></div></div>
+      <div class="bar"><div class="lbl"><span>curiosity</span><b id="v-cur">0</b></div>
+        <div class="track"><div class="fill" id="f-cur"></div></div></div>
+      <div class="bar"><div class="lbl"><span>boredom</span><b id="v-bore">0</b></div>
+        <div class="track"><div class="fill" id="f-bore" style="background:var(--warm)"></div></div></div>
+      <div class="bar"><div class="lbl"><span>pressure (sleep)</span><b id="v-press">0</b></div>
+        <div class="track"><div class="fill" id="f-press" style="background:var(--right)"></div></div></div>
+    </div>
+    <div class="panel">
+      <h2>Character (learned gate)</h2>
+      <div class="char" id="character"><span class="muted">untrained</span></div>
+    </div>
+    <div class="panel">
+      <h2>Deep memories (fast lane)</h2>
+      <div class="deep" id="deep"><div class="empty">none yet</div></div>
+    </div>
+  </div>
+
+  <!-- center column -->
+  <div class="stack">
+    <div class="panel">
+      <h2>Connectome — who fires together</h2>
+      <svg id="graph" viewBox="0 0 600 380" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="muted">node size = reliability · colour = tier (<span style="color:var(--hot)">gpu</span>/<span style="color:var(--warm)">cpu</span>/cold) · left/right = hemisphere · edge = Hebbian weight</div>
+    </div>
+    <div class="panel">
+      <h2>History</h2>
+      <div class="muted">mood</div><svg class="spark" id="sp-mood" viewBox="0 0 600 52" preserveAspectRatio="none"></svg>
+      <div class="muted">reward</div><svg class="spark" id="sp-reward" viewBox="0 0 600 52" preserveAspectRatio="none"></svg>
+    </div>
+  </div>
+
+  <!-- right column -->
+  <div class="stack">
+    <div class="panel">
+      <h2>Stats</h2>
+      <div class="grid">
+        <div class="stat"><div class="v" id="st-agents">0</div><div class="k">agents</div>
+          <div class="tiers"><span class="pill gpu" id="st-gpu">0</span><span class="pill cpu" id="st-cpu">0</span><span class="pill cold" id="st-cold">0</span></div></div>
+        <div class="stat"><div class="v" id="st-reward">0</div><div class="k">avg reward</div></div>
+        <div class="stat"><div class="v" id="st-grew">0</div><div class="k">grew / pruned <span id="st-pruned"></span></div></div>
+        <div class="stat"><div class="v" id="st-deep">0</div><div class="k">deep memories</div></div>
+        <div class="stat"><div class="v" id="st-reflex">0</div><div class="k">reflexes</div></div>
+        <div class="stat"><div class="v" id="st-think">0</div><div class="k">thoughts</div></div>
+        <div class="stat"><div class="v" id="st-sleep">0</div><div class="k">sleeps</div></div>
+        <div class="stat"><div class="v" id="st-stage">–</div><div class="k">life stage</div></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Agents</h2>
+      <div id="roster"><div class="empty">—</div></div>
+    </div>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const CONCEPT_COL = {visual:'#6ea8fe',auditory:'#41d18b',tactile:'#ffca28',olfactory:'#c792ea',
+  gustatory:'#f78fb3',spatial:'#64d2ff',language:'#7c9cff',logical:'#ff9e64',numeric:'#e0af68',
+  social:'#f7768e',danger:'#ff5c7a',reward:'#41d18b'};
+let lastStamp = 0;
+
+function pct(x){ return Math.round(x*100); }
+function setFill(id, frac, unit){
+  $(id).style.width = Math.max(0, Math.min(1, frac))*100 + '%';
+  return frac;
+}
+
+function render(d){
+  if(!d || d.tick===undefined) return;
+  lastStamp = Date.now();
+  $('dot').classList.add('live');
+  // status
+  $('s-tick').textContent = d.tick.toLocaleString();
+  $('s-day').textContent = (d.day||0).toLocaleString();
+  $('s-stage').textContent = d.stage||'–';
+  $('st-stage').textContent = d.stage||'–';
+  // vitals
+  $('v-mood').textContent = (d.mood||0).toFixed(2);
+  $('mood-neg').style.width = (d.mood<0 ? -d.mood*50 : 0) + '%';
+  $('mood-pos').style.width = (d.mood>0 ? d.mood*50 : 0) + '%';
+  $('v-energy').textContent = pct(d.energy||0)+'%'; setFill('f-energy', d.energy||0);
+  $('v-cur').textContent = pct(d.curiosity||0)+'%'; setFill('f-cur', d.curiosity||0);
+  $('v-bore').textContent = pct(d.boredom||0)+'%'; setFill('f-bore', d.boredom||0);
+  $('v-press').textContent = (d.pressure||0).toFixed(2); setFill('f-press', d.pressure||0);
+  // stats
+  $('st-agents').textContent = d.agents||0;
+  $('st-gpu').textContent = d.gpu||0; $('st-cpu').textContent = d.cpu||0; $('st-cold').textContent = d.cold||0;
+  $('st-reward').textContent = (d.avg_reward||0).toFixed(2);
+  $('st-grew').textContent = d.recruited||0; $('st-pruned').textContent = '('+(d.pruned||0)+')';
+  $('st-deep').textContent = d.deep_memories||0;
+  $('st-reflex').textContent = (d.reflexes||0).toLocaleString();
+  $('st-think').textContent = (d.thinks||0).toLocaleString();
+  $('st-sleep').textContent = d.sleeps||0;
+  // character
+  const ch = $('character');
+  if(d.character && d.character!=='untrained'){
+    ch.innerHTML = d.character.split('·').map(s=>{
+      const [k,v]=s.split('→'); return `<span class="chip">${(k||'').trim()} → <b>${(v||'').trim()}</b></span>`;
+    }).join('');
+  } else ch.innerHTML = '<span class="muted">untrained — needs a life to form</span>';
+  // deep memories
+  renderDeep(d.deep||[]);
+  // roster + graph
+  renderRoster(d.roster||[]);
+  renderGraph(d.roster||[], d.edges||[]);
+  // history
+  spark('sp-mood', d.mood_history||[], -1, 1, '#6ea8fe');
+  spark('sp-reward', d.reward_history||[], -1, 1.2, '#41d18b');
+}
+
+function renderDeep(deep){
+  const el=$('deep');
+  if(!deep.length){ el.innerHTML='<div class="empty">none yet</div>'; return; }
+  el.innerHTML = deep.slice(0,12).map(m=>{
+    const fear = m.valence<0;
+    return `<div class="dm"><span class="${fear?'fear':'safe'}">${fear?'⚠':'♥'}</span>
+      <span>${m.concept} <span class="muted">→ ${m.action}</span></span>
+      <span class="st"><i style="width:${Math.min(100,m.strength*40)}%;background:${fear?'var(--bad)':'var(--good)'}"></i></span></div>`;
+  }).join('');
+}
+
+function renderRoster(r){
+  const el=$('roster');
+  if(!r.length){ el.innerHTML='<div class="empty">—</div>'; return; }
+  const order={gpu:0,cpu:1,cold:2};
+  r = r.slice().sort((a,b)=> (order[a.tier]-order[b.tier]) || b.reliability-a.reliability);
+  el.innerHTML = r.map(a=>{
+    const col = a.hemisphere==='left' ? 'var(--left)' : 'var(--right)';
+    return `<div class="agent ${a.tier}"><span class="tag" style="background:${col}"></span>
+      <span class="nm" title="${a.name}">${a.name}</span>
+      <span class="cc">${a.concept}</span>
+      <span class="rel"><i style="width:${Math.min(100,a.reliability*66)}%"></i></span>
+      <span class="ax">${a.activations>999?(a.activations/1000|0)+'k':a.activations}</span></div>`;
+  }).join('');
+}
+
+function renderGraph(roster, edges){
+  const svg=$('graph'), W=600,H=380, cx=W/2, cy=H/2;
+  if(!roster.length){ svg.innerHTML=''; return; }
+  // left hemi on the left arc, right hemi on the right arc
+  const L=roster.filter(a=>a.hemisphere==='left'), R=roster.filter(a=>a.hemisphere==='right');
+  const pos={};
+  const place=(list, side)=>{ list.forEach((a,i)=>{
+    const t=(i+0.5)/list.length, ang=Math.PI*(t-0.5); // -90..+90
+    const rx=W*0.34, ry=H*0.40, x=cx+side*Math.cos(ang)*rx, y=cy+Math.sin(ang)*ry;
+    pos[a.name]={x,y,a};
+  });};
+  place(L,-1); place(R,1);
+  const tcol=a=> a.tier==='gpu'?'#ff7043':a.tier==='cpu'?'#ffca28':'#3a4463';
+  let s='';
+  // edges
+  const maxw=Math.max(0.01,...edges.map(e=>e.weight));
+  edges.forEach(e=>{ const p=pos[e.a], q=pos[e.b]; if(!p||!q) return;
+    const w=e.weight/maxw;
+    s+=`<line x1="${p.x.toFixed(1)}" y1="${p.y.toFixed(1)}" x2="${q.x.toFixed(1)}" y2="${q.y.toFixed(1)}"
+      stroke="#6ea8fe" stroke-opacity="${(0.10+0.55*w).toFixed(2)}" stroke-width="${(0.5+2.5*w).toFixed(2)}"/>`;
+  });
+  // nodes
+  Object.values(pos).forEach(({x,y,a})=>{
+    const rad=3+a.reliability*4;
+    s+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${rad.toFixed(1)}" fill="${tcol(a)}"
+        stroke="${a.hemisphere==='left'?'#7c9cff':'#f78fb3'}" stroke-width="1"><title>${a.name} · ${a.concept} · rel ${a.reliability.toFixed(2)} · ${a.tier}</title></circle>`;
+    if(a.tier!=='cold')
+      s+=`<text x="${x.toFixed(1)}" y="${(y-rad-3).toFixed(1)}" fill="#8b98b4" font-size="8" text-anchor="middle">${a.name}</text>`;
+  });
+  svg.innerHTML=s;
+}
+
+function spark(id, arr, lo, hi, col){
+  const svg=$(id), W=600,H=52;
+  if(!arr.length){ svg.innerHTML=''; return; }
+  const n=arr.length, pts=arr.map((v,i)=>{
+    const x=n>1? i/(n-1)*W : 0, y=H-((v-lo)/(hi-lo))*H;
+    return x.toFixed(1)+','+Math.max(0,Math.min(H,y)).toFixed(1);
+  }).join(' ');
+  const zero=H-((0-lo)/(hi-lo))*H;
+  svg.innerHTML=`<line x1="0" y1="${zero.toFixed(1)}" x2="${W}" y2="${zero.toFixed(1)}" stroke="#1e2740"/>
+    <polyline points="${pts}" fill="none" stroke="${col}" stroke-width="1.5"/>`;
+}
+
+async function tick(){
+  const src=$('src').value.trim()||'hud.json';
+  try{
+    const r=await fetch(src,{cache:'no-store'});
+    render(await r.json());
+  }catch(e){ /* keep last frame */ }
+  const dt=lastStamp? Math.round((Date.now()-lastStamp)/1000):null;
+  $('ago').textContent = dt===null?'no data':(dt<2?'live':dt+'s ago');
+  if(dt!==null && dt>5) $('dot').classList.remove('live');
+}
+// allow dropping a hud.json for offline viewing
+document.addEventListener('dragover',e=>e.preventDefault());
+document.addEventListener('drop',e=>{e.preventDefault();
+  const f=e.dataTransfer.files[0]; if(!f) return;
+  f.text().then(t=>render(JSON.parse(t)));});
+tick(); setInterval(tick, 1500);
+</script>
+</body>
+</html>
